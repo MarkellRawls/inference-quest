@@ -1,0 +1,160 @@
+import Phaser from 'phaser';
+import { GAME, SCENES } from '../config/constants.js';
+
+export class InfoCardScene extends Phaser.Scene {
+  constructor() {
+    super(SCENES.INFO_CARD);
+  }
+
+  init(data) {
+    this.cardData = data;
+  }
+
+  create() {
+    const { title, concept, details, funFact, nextZone, callingScene, playerData } = this.cardData;
+
+    this.overlay = this.add.rectangle(
+      GAME.WIDTH / 2, GAME.HEIGHT / 2,
+      GAME.WIDTH, GAME.HEIGHT,
+      0x000000, 0
+    );
+    this.overlay.setDepth(0);
+
+    this.tweens.add({
+      targets: this.overlay,
+      fillAlpha: 0.75,
+      duration: 400,
+      ease: 'Sine.easeOut',
+    });
+
+    this.cardContainer = this.add.container(GAME.WIDTH / 2, GAME.HEIGHT / 2);
+    this.cardContainer.setDepth(10);
+    this.cardContainer.setScale(0);
+
+    const cardW = 760;
+    const cardH = 480;
+
+    const cardBg = this.add.graphics();
+    cardBg.fillStyle(0x0a0a2a, 0.95);
+    cardBg.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 16);
+    cardBg.lineStyle(2, 0x00ffff, 0.6);
+    cardBg.strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 16);
+    this.cardContainer.add(cardBg);
+
+    const headerBg = this.add.graphics();
+    headerBg.fillStyle(0x00ffff, 0.08);
+    headerBg.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, 60, { tl: 16, tr: 16, bl: 0, br: 0 });
+    this.cardContainer.add(headerBg);
+
+    const stageLabel = this.add.text(-cardW / 2 + 24, -cardH / 2 + 12, 'CONCEPT UNLOCKED', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '11px',
+      color: '#00ffff',
+      letterSpacing: 4,
+    });
+    this.cardContainer.add(stageLabel);
+
+    const titleText = this.add.text(-cardW / 2 + 24, -cardH / 2 + 30, title, {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '24px',
+      fontStyle: 'bold',
+      color: '#ffffff',
+    });
+    this.cardContainer.add(titleText);
+
+    const conceptText = this.add.text(-cardW / 2 + 24, -cardH / 2 + 80, concept, {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '14px',
+      color: '#ccddff',
+      wordWrap: { width: cardW - 48 },
+      lineSpacing: 4,
+    });
+    this.cardContainer.add(conceptText);
+
+    let bulletY = conceptText.y + conceptText.height + 20;
+    for (const detail of details) {
+      const bullet = this.add.text(-cardW / 2 + 40, bulletY, '> ' + detail, {
+        fontFamily: '"Courier New", monospace',
+        fontSize: '13px',
+        color: '#aabbdd',
+        wordWrap: { width: cardW - 80 },
+        lineSpacing: 2,
+      });
+      this.cardContainer.add(bullet);
+      bulletY += bullet.height + 8;
+    }
+
+    if (funFact) {
+      const factY = Math.max(bulletY + 12, cardH / 2 - 90);
+      const factBg = this.add.graphics();
+      factBg.fillStyle(0xffd700, 0.06);
+      factBg.fillRoundedRect(-cardW / 2 + 16, factY, cardW - 32, 40, 8);
+      this.cardContainer.add(factBg);
+
+      const factText = this.add.text(-cardW / 2 + 32, factY + 6, 'FUN FACT: ' + funFact, {
+        fontFamily: '"Courier New", monospace',
+        fontSize: '11px',
+        color: '#ffd700',
+        wordWrap: { width: cardW - 80 },
+        lineSpacing: 2,
+      });
+      this.cardContainer.add(factText);
+    }
+
+    const btnY = cardH / 2 - 36;
+    const btnBg = this.add.image(0, btnY, 'button_bg');
+    btnBg.setScale(0.7, 0.8);
+    this.cardContainer.add(btnBg);
+
+    const btnText = this.add.text(0, btnY, 'CONTINUE', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '16px',
+      fontStyle: 'bold',
+      color: '#00ffff',
+    });
+    btnText.setOrigin(0.5);
+    this.cardContainer.add(btnText);
+
+    btnBg.setInteractive({ useHandCursor: true });
+
+    const btnGlow = btnBg.preFX.addGlow(0x00ffff, 2, 0, false, 0.1, 12);
+    btnBg.on('pointerover', () => {
+      this.tweens.add({ targets: btnGlow, outerStrength: 6, duration: 200 });
+    });
+    btnBg.on('pointerout', () => {
+      this.tweens.add({ targets: btnGlow, outerStrength: 2, duration: 200 });
+    });
+    btnBg.on('pointerdown', () => {
+      this.dismiss(nextZone, callingScene, playerData);
+    });
+
+    this.tweens.add({
+      targets: this.cardContainer,
+      scale: 1,
+      duration: 500,
+      ease: 'Back.easeOut',
+    });
+  }
+
+  dismiss(nextZone, callingScene, playerData) {
+    this.tweens.add({
+      targets: this.cardContainer,
+      scale: 0,
+      duration: 300,
+      ease: 'Back.easeIn',
+    });
+
+    this.tweens.add({
+      targets: this.overlay,
+      fillAlpha: 0,
+      duration: 300,
+      onComplete: () => {
+        this.scene.stop(callingScene);
+        this.scene.stop(SCENES.INFO_CARD);
+        if (nextZone) {
+          this.scene.start(nextZone, playerData || {});
+        }
+      },
+    });
+  }
+}
