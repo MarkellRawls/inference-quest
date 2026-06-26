@@ -12,7 +12,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setDepth(100);
     this.setScale(0.8);
 
-    this.body.setCircle(20, 12, 12);
+    this.body.setCircle(24, 16, 16);
     this.body.setCollideWorldBounds(true);
 
     this.glowFx = addGlow(this, 0x00ffff, 4, 0, false, 0.1, 24);
@@ -24,7 +24,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       alpha: { start: 0.5, end: 0 },
       lifespan: 600,
       blendMode: Phaser.BlendModes.ADD,
-      frequency: 40,
+      frequency: 35,
       tint: 0x00ffff,
     });
     this.trail.setDepth(99);
@@ -37,7 +37,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.dashCooldown = false;
     this.dashTime = 0;
     this._invulnerable = false;
-    this.bobOffset = 0;
 
     this.hp = 3;
     this.maxHp = 3;
@@ -70,10 +69,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.scene.tweens.add({
       targets: this,
-      alpha: 0.3,
-      duration: 80,
+      alpha: 0.2,
+      duration: 60,
       yoyo: true,
-      repeat: 6,
+      repeat: 8,
       onComplete: () => {
         this.setAlpha(1);
         this._invulnerable = false;
@@ -81,6 +80,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
 
     this.scene.cameras.main.shake(150, 0.008);
+
+    this.trail.setParticleTint(0xff4444);
+    this.scene.time.delayedCall(800, () => {
+      if (this.trail && this.trail.active) {
+        this.trail.setParticleTint(this._currentPaletteTint || 0x00ffff);
+      }
+    });
+
     return this.hp <= 0;
   }
 
@@ -89,13 +96,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   update(time, delta) {
-    this.bobOffset = Math.sin(time * 0.003) * 3;
-
     if (this.isDashing) {
       this.dashTime -= delta;
       if (this.dashTime <= 0) {
         this.isDashing = false;
-        this.trail.setFrequency(40);
+        this.trail.setFrequency(35);
       }
       return;
     }
@@ -138,9 +143,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.isDashing = true;
     this.dashTime = GAME.DASH_DURATION;
     this.dashCooldown = true;
-    this.trail.setFrequency(10);
+    this.trail.setFrequency(8);
 
-    this.scene.cameras.main.shake(80, 0.003);
+    this.scene.cameras.main.shake(80, 0.004);
 
     this.scene.time.delayedCall(GAME.DASH_COOLDOWN, () => {
       this.dashCooldown = false;

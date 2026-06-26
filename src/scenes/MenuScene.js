@@ -50,16 +50,16 @@ export class MenuScene extends Phaser.Scene {
       scale: { start: 0.35, end: 0, random: true },
       alpha: { start: 0.4, end: 0 },
       lifespan: { min: 4000, max: 8000 },
-      frequency: 120,
+      frequency: 100,
       blendMode: Phaser.BlendModes.ADD,
       tint: [0x6a5acd, 0x00ffff, 0xff00ff, 0xffd700, 0x44ff88],
     }).setScrollFactor(0).setDepth(10);
   }
 
   createFloatingOrb() {
-    this.orb = this.add.image(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 30, 'player_orb');
+    this.orb = this.add.image(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 60, 'player_orb');
     this.orb.setBlendMode(Phaser.BlendModes.ADD);
-    this.orb.setScale(2.2);
+    this.orb.setScale(2.5);
     this.orb.setDepth(20);
     addGlow(this.orb, 0x00ffff, 10, 0, false, 0.1, 40);
 
@@ -70,7 +70,7 @@ export class MenuScene extends Phaser.Scene {
       alpha: { start: 0.5, end: 0 },
       lifespan: 1500,
       blendMode: Phaser.BlendModes.ADD,
-      frequency: 25,
+      frequency: 20,
       tint: [0x00ffff, 0x4488ff],
     }).setDepth(19);
 
@@ -78,12 +78,13 @@ export class MenuScene extends Phaser.Scene {
   }
 
   createTitle() {
-    this.title = this.add.text(GAME.WIDTH / 2, 180, 'INFERENCE QUEST', {
+    this.title = this.add.text(GAME.WIDTH / 2, 160, 'INFERENCE QUEST', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '76px',
+      fontSize: '84px',
       fontStyle: 'bold',
       color: '#ffffff',
       align: 'center',
+      resolution: 2,
     });
     this.title.setOrigin(0.5);
     this.title.setDepth(30);
@@ -100,11 +101,12 @@ export class MenuScene extends Phaser.Scene {
       });
     }
 
-    this.subtitle = this.add.text(GAME.WIDTH / 2, 270, 'Journey Through the AI Inference Pipeline', {
+    this.subtitle = this.add.text(GAME.WIDTH / 2, 260, 'Journey Through the AI Inference Pipeline', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '26px',
+      fontSize: '28px',
       color: '#88ccff',
       align: 'center',
+      resolution: 2,
     });
     this.subtitle.setOrigin(0.5);
     this.subtitle.setDepth(30);
@@ -119,20 +121,21 @@ export class MenuScene extends Phaser.Scene {
       ease: 'Sine.easeOut',
     });
 
-    this.tagline = this.add.text(GAME.WIDTH / 2, 310, 'Featuring llm-d, KV Cache Routing, and Cutting-Edge Serving Architecture', {
+    this.tagline = this.add.text(GAME.WIDTH / 2, 310, 'Featuring llm-d  |  KV Cache Routing  |  Cutting-Edge Serving Architecture', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '16px',
+      fontSize: '20px',
       color: '#ffd700',
       align: 'center',
+      resolution: 2,
     });
     this.tagline.setOrigin(0.5);
     this.tagline.setDepth(30);
-    addGlow(this.tagline, 0xffd700, 1, 0, false, 0.1, 8);
+    addGlow(this.tagline, 0xffd700, 2, 0, false, 0.1, 12);
     this.tagline.setAlpha(0);
 
     this.tweens.add({
       targets: this.tagline,
-      alpha: 0.8,
+      alpha: 0.9,
       duration: 1500,
       delay: 1000,
       ease: 'Sine.easeOut',
@@ -140,8 +143,8 @@ export class MenuScene extends Phaser.Scene {
   }
 
   createZoneDots() {
-    const dotY = GAME.HEIGHT - 70;
-    const spacing = 55;
+    const dotY = GAME.HEIGHT - 80;
+    const spacing = 60;
     const startX = GAME.WIDTH / 2 - (ALL_ACCENTS.length - 1) * (spacing / 2);
 
     const zoneNames = [
@@ -151,7 +154,7 @@ export class MenuScene extends Phaser.Scene {
     ];
 
     ALL_ACCENTS.forEach((color, i) => {
-      const dot = this.add.circle(startX + i * spacing, dotY, 8, color, 0.7);
+      const dot = this.add.circle(startX + i * spacing, dotY, 9, color, 0.7);
       dot.setDepth(30);
       addGlow(dot, color, 2, 0, false, 0.1, 12);
 
@@ -159,10 +162,11 @@ export class MenuScene extends Phaser.Scene {
       dot.on('pointerover', () => {
         this.tweens.add({ targets: dot, scaleX: 1.5, scaleY: 1.5, duration: 200 });
         if (!this.zoneLabel) {
-          this.zoneLabel = this.add.text(startX + i * spacing, dotY - 28, zoneNames[i], {
+          this.zoneLabel = this.add.text(startX + i * spacing, dotY - 30, zoneNames[i], {
             fontFamily: '"Courier New", monospace',
-            fontSize: '15px',
+            fontSize: '16px',
             color: '#ffffff',
+            resolution: 2,
           }).setOrigin(0.5).setDepth(31);
         } else {
           this.zoneLabel.setText(zoneNames[i]);
@@ -179,18 +183,19 @@ export class MenuScene extends Phaser.Scene {
 
   createBeginButton() {
     const btnX = GAME.WIDTH / 2;
-    const btnY = GAME.HEIGHT / 2 + 180;
+    const btnY = GAME.HEIGHT / 2 + 200;
 
     this.btnBg = this.add.image(btnX, btnY, 'button_bg');
-    this.btnBg.setScale(1.3, 1.2);
+    this.btnBg.setScale(1.4, 1.3);
     this.btnBg.setDepth(30);
     const btnGlow = addGlow(this.btnBg, 0x00ffff, 3, 0, false, 0.1, 16);
 
     this.btnText = this.add.text(btnX, btnY, 'BEGIN JOURNEY', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '28px',
+      fontSize: '30px',
       fontStyle: 'bold',
       color: '#00ffff',
+      resolution: 2,
     });
     this.btnText.setOrigin(0.5);
     this.btnText.setDepth(31);
@@ -199,13 +204,13 @@ export class MenuScene extends Phaser.Scene {
 
     this.btnBg.on('pointerover', () => {
       if (btnGlow) this.tweens.add({ targets: btnGlow, outerStrength: 8, duration: 200 });
-      this.tweens.add({ targets: this.btnBg, scaleX: 1.35, scaleY: 1.25, duration: 200 });
+      this.tweens.add({ targets: this.btnBg, scaleX: 1.45, scaleY: 1.35, duration: 200 });
       this.tweens.add({ targets: this.btnText, scaleX: 1.05, scaleY: 1.05, duration: 200 });
     });
 
     this.btnBg.on('pointerout', () => {
       if (btnGlow) this.tweens.add({ targets: btnGlow, outerStrength: 3, duration: 200 });
-      this.tweens.add({ targets: this.btnBg, scaleX: 1.3, scaleY: 1.2, duration: 200 });
+      this.tweens.add({ targets: this.btnBg, scaleX: 1.4, scaleY: 1.3, duration: 200 });
       this.tweens.add({ targets: this.btnText, scaleX: 1, scaleY: 1, duration: 200 });
     });
 
@@ -255,8 +260,8 @@ export class MenuScene extends Phaser.Scene {
 
     this.orbAngle += delta * 0.001;
     const cx = GAME.WIDTH / 2;
-    const cy = GAME.HEIGHT / 2 - 30;
-    this.orb.x = cx + Math.cos(this.orbAngle) * 180;
-    this.orb.y = cy + Math.sin(this.orbAngle * 2) * 60;
+    const cy = GAME.HEIGHT / 2 - 60;
+    this.orb.x = cx + Math.cos(this.orbAngle) * 200;
+    this.orb.y = cy + Math.sin(this.orbAngle * 2) * 70;
   }
 }

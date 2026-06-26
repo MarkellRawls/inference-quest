@@ -28,6 +28,8 @@ const DATA_TOOLTIPS = [
   'body: { "max_tokens": 1024 }',
 ];
 
+const NEON_SIGNS = ['API v2.0', 'HTTPS', 'REST', 'gRPC', 'JSON', 'WebSocket', 'OAuth 2.0', 'TLS 1.3'];
+
 export class Zone2_APIGateway extends Phaser.Scene {
   constructor() {
     super(SCENES.ZONE2);
@@ -43,6 +45,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
 
     this.createBackgrounds();
     this.createAmbientEffects();
+    this.createNeonSigns();
     this.createPlayer();
     this.createGates();
     this.createRateLimiters();
@@ -77,6 +80,45 @@ export class Zone2_APIGateway extends Phaser.Scene {
 
   createAmbientEffects() {
     this.neonStreaks = createNeonStreaks(this, PALETTE);
+    // Make neon streaks more vibrant: increase alpha and frequency
+    if (this.neonStreaks && this.neonStreaks.setAlpha) {
+      this.neonStreaks.setAlpha(0.9);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Pulsing neon signs in the background                              */
+  /* ------------------------------------------------------------------ */
+
+  createNeonSigns() {
+    const signSpacing = WORLD.width / (NEON_SIGNS.length + 1);
+    NEON_SIGNS.forEach((label, i) => {
+      const x = signSpacing * (i + 1) + Phaser.Math.Between(-100, 100);
+      const y = Phaser.Math.Between(60, 180);
+      const color = Phaser.Utils.Array.GetRandom(PALETTE.neon);
+      const hexColor = '#' + color.toString(16).padStart(6, '0');
+
+      const sign = this.add.text(x, y, label, {
+        fontFamily: '"Courier New", monospace',
+        fontSize: '22px',
+        fontStyle: 'bold',
+        color: hexColor,
+        resolution: 2,
+      });
+      sign.setOrigin(0.5).setDepth(5).setAlpha(0.35);
+      addGlow(sign, color, 4, 0, false, 0.1, 16);
+
+      // Pulsing glow animation
+      this.tweens.add({
+        targets: sign,
+        alpha: { from: 0.2, to: 0.55 },
+        duration: 1500 + Math.random() * 1500,
+        ease: 'Sine.easeInOut',
+        yoyo: true,
+        repeat: -1,
+        delay: Math.random() * 2000,
+      });
+    });
   }
 
   createPlayer() {
@@ -121,6 +163,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       fontSize: '18px',
       fontStyle: 'bold',
       color: '#ff4444',
+      resolution: 2,
     });
     lockText.setOrigin(0.5).setDepth(61);
     addGlow(lockText, 0xff0000, 3, 0, false, 0.1, 12);
@@ -129,6 +172,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       fontFamily: '"Courier New", monospace',
       fontSize: '14px',
       color: '#' + tt.color.toString(16).padStart(6, '0'),
+      resolution: 2,
     });
     label.setOrigin(0.5).setDepth(61);
 
@@ -163,6 +207,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       fontSize: '14px',
       fontStyle: 'bold',
       color: '#ffffff',
+      resolution: 2,
     });
     label.setOrigin(0.5).setDepth(71);
     token._label = label;
@@ -197,6 +242,26 @@ export class Zone2_APIGateway extends Phaser.Scene {
     gate.unlocked = true;
     gate.lockText.setText('OPEN');
     gate.lockText.setColor('#44ff44');
+
+    // Particle burst from gate bars
+    for (let i = 0; i < 8; i++) {
+      const burstY = Phaser.Math.Between(100, GAME.HEIGHT - 100);
+      this.time.delayedCall(i * 40, () => {
+        createCollectBurst(this, gate.x, burstY, 0x44ff44);
+      });
+    }
+
+    // Neon flash overlay
+    const flash = this.add.rectangle(gate.x, GAME.HEIGHT / 2, 200, GAME.HEIGHT, 0x44ff44, 0.4);
+    flash.setDepth(100);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scaleX: 3,
+      duration: 400,
+      ease: 'Power2',
+      onComplete: () => flash.destroy(),
+    });
 
     this.tweens.add({
       targets: gate.topBar,
@@ -239,6 +304,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       beam._config = lp;
       beam._cooldown = false;
       beam._baseY = lp.y;
+      beam._warningActive = false;
       this.rateLimiters.push(beam);
 
       this.physics.add.overlap(this.player, beam, () => this.hitRateLimiter(beam), null, this);
@@ -249,12 +315,51 @@ export class Zone2_APIGateway extends Phaser.Scene {
       fontSize: '36px',
       fontStyle: 'bold',
       color: '#ff4444',
+      resolution: 2,
     });
     this.rateLimitWarning.setOrigin(0.5);
     this.rateLimitWarning.setScrollFactor(0);
     this.rateLimitWarning.setDepth(300);
     this.rateLimitWarning.setAlpha(0);
     addGlow(this.rateLimitWarning, 0xff0000, 6, 0, false, 0.1, 16);
+
+    // Start beam warning flash cycle
+    this._beamWarningTimer = this.time.addEvent({
+      delay: 2800,
+      callback: () => this.flashBeamWarnings(),
+      loop: true,
+    });
+  }
+
+  /* Flash rate limiter beams red 3 times before they go solid */
+  flashBeamWarnings() {
+    this.rateLimiters.forEach(beam => {
+      if (beam._cooldown || beam._warningActive) return;
+      beam._warningActive = true;
+
+      // 3 quick red blinks
+      let blinkCount = 0;
+      const blinkEvent = this.time.addEvent({
+        delay: 120,
+        callback: () => {
+          blinkCount++;
+          if (blinkCount % 2 === 1) {
+            beam.setFillStyle(0xff0000);
+            beam.setAlpha(1);
+          } else {
+            beam.setFillStyle(0xff4444);
+            beam.setAlpha(0.7);
+          }
+          if (blinkCount >= 6) {
+            beam.setFillStyle(0xff4444);
+            beam.setAlpha(1);
+            beam._warningActive = false;
+            blinkEvent.remove();
+          }
+        },
+        loop: true,
+      });
+    });
   }
 
   hitRateLimiter(beam) {
@@ -286,6 +391,9 @@ export class Zone2_APIGateway extends Phaser.Scene {
       hold: 600,
     });
 
+    // Particle trail on the beam
+    createCollectBurst(this, this.player.x, beam.y, 0xff4444);
+
     beam._cooldown = true;
     beam.setFillStyle(0x44ff44);
     this.time.delayedCall(1500, () => {
@@ -312,6 +420,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
         fontSize: '48px',
         fontStyle: 'bold',
         color: '#4488ff',
+        resolution: 2,
       });
       numText.setOrigin(0.5).setDepth(56);
 
@@ -327,6 +436,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       fontSize: '18px',
       color: '#4488ff',
       align: 'center',
+      resolution: 2,
     });
     queueLabel.setOrigin(0.5).setDepth(60);
   }
@@ -339,7 +449,16 @@ export class Zone2_APIGateway extends Phaser.Scene {
       this.queueProgress++;
       this.queueGates[index].gate.setFillStyle(0x44ff44, 0.6);
       this.queueGates[index].numText.setColor('#44ff44');
-      createCollectBurst(this, this.queueGates[index].gate.x, this.queueGates[index].gate.y, 0x44ff44);
+
+      // Cascade of green particles
+      const gx = this.queueGates[index].gate.x;
+      const gy = this.queueGates[index].gate.y;
+      for (let j = 0; j < 5; j++) {
+        this.time.delayedCall(j * 60, () => {
+          createCollectBurst(this, gx, gy - 60 + j * 30, 0x44ff44);
+        });
+      }
+
       this.cameras.main.shake(60, 0.003);
     } else if (index > this.queueProgress) {
       this.cameras.main.shake(100, 0.006);
@@ -354,6 +473,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
         fontFamily: '"Courier New", monospace',
         fontSize: '18px',
         color: '#ff4444',
+        resolution: 2,
       });
       warn.setOrigin(0.5).setDepth(300);
       this.tweens.add({
@@ -402,14 +522,20 @@ export class Zone2_APIGateway extends Phaser.Scene {
     createCollectBurst(this, packet.x, packet.y, 0x00ffff);
     this.packetsCollected++;
 
+    // Enhanced tooltip with border and glow styling
     const tooltip = this.add.text(packet.x, packet.y - 30, packet._tooltip, {
       fontFamily: '"Courier New", monospace',
       fontSize: '14px',
       color: '#00ffff',
-      backgroundColor: '#0d022180',
-      padding: { x: 9, y: 5 },
+      backgroundColor: '#0d022199',
+      padding: { x: 12, y: 8 },
+      resolution: 2,
+      stroke: '#00ffff',
+      strokeThickness: 1,
     });
     tooltip.setOrigin(0.5).setDepth(300);
+    addGlow(tooltip, 0x00ffff, 3, 0, false, 0.1, 10);
+
     this.tweens.add({
       targets: tooltip,
       y: tooltip.y - 38,
@@ -446,15 +572,18 @@ export class Zone2_APIGateway extends Phaser.Scene {
     this.boss.body.setCircle(this.boss.width / 2);
     addGlow(this.boss, 0xff4400, 6, 0, false, 0.1, 32);
 
-    this.bossHP = 5;
-    this.bossMaxHP = 5;
+    this.bossHP = 6;
+    this.bossMaxHP = 6;
     this.bossVulnerable = false;
     this.bossPhaseTime = 0;
     this.bossActive = false;
+    this.bossPhase2 = false;
     this.bossBeams = [];
+    this.boss429s = [];
+    this.bossMovementSpeed = 1.0;
 
     // Pulsing tween
-    this.tweens.add({
+    this.bossPulseTween = this.tweens.add({
       targets: this.boss,
       scaleX: 3.3,
       scaleY: 3.3,
@@ -481,8 +610,10 @@ export class Zone2_APIGateway extends Phaser.Scene {
       fontSize: '20px',
       fontStyle: 'bold',
       color: '#ff4444',
+      resolution: 2,
     }).setOrigin(0.5);
     addGlow(bossTitle, 0xff0000, 3, 0, false, 0.1, 12);
+    this._bossTitleText = bossTitle;
 
     // HP bar background
     const hpBarBg = this.add.rectangle(0, 30, 300, 16, 0x333333);
@@ -498,6 +629,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       fontSize: '12px',
       fontStyle: 'bold',
       color: '#ffffff',
+      resolution: 2,
     }).setOrigin(0.5);
 
     this.bossHUDContainer.add([bossTitle, hpBarBg, this.bossHPBar, this.bossHPText]);
@@ -522,7 +654,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
     // Start boss attack cycle
     this.bossAttackTimer = this.time.addEvent({
       delay: 3000,
-      callback: () => this.bossFireBeams(),
+      callback: () => this.bossAttackCycle(),
       loop: true,
     });
 
@@ -532,6 +664,28 @@ export class Zone2_APIGateway extends Phaser.Scene {
       callback: () => this.bossOpenWindow(),
       loop: true,
     });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Boss attack cycle: alternates beams and 429 barrage               */
+  /* ------------------------------------------------------------------ */
+
+  bossAttackCycle() {
+    if (this.bossDefeated || this.bossVulnerable) return;
+
+    if (this.bossPhase2) {
+      // Phase 2: fire both simultaneously
+      this.bossFireBeams();
+      this.time.delayedCall(400, () => this.bossFire429Barrage());
+    } else {
+      // Phase 1: alternate between beams and 429 barrage
+      this._bossAttackToggle = !this._bossAttackToggle;
+      if (this._bossAttackToggle) {
+        this.bossFireBeams();
+      } else {
+        this.bossFire429Barrage();
+      }
+    }
   }
 
   bossFireBeams() {
@@ -544,21 +698,29 @@ export class Zone2_APIGateway extends Phaser.Scene {
         if (this.bossDefeated || this.bossVulnerable) return;
 
         const beamY = this.bossArenaCenterY + offset;
-        const beam = this.add.rectangle(this.bossArenaX, beamY, this.bossArenaWidth, 20, 0xff2200, 0.8);
-        beam.setOrigin(0, 0.5).setDepth(75);
-        beam.setAlpha(0);
-        addGlow(beam, 0xff0000, 4, 0, false, 0.1, 12);
 
-        // Warning flash
+        // Visual warning line (thin, glowing)
+        const warningLine = this.add.rectangle(this.bossArenaX, beamY, this.bossArenaWidth, 4, 0xff6600, 0.3);
+        warningLine.setOrigin(0, 0.5).setDepth(74);
+        addGlow(warningLine, 0xff4400, 3, 0, false, 0.1, 8);
+
+        // Warning flash: 3 quick blinks
         this.tweens.add({
-          targets: beam,
-          alpha: 0.3,
-          duration: 200,
+          targets: warningLine,
+          alpha: { from: 0.1, to: 0.6 },
+          duration: 150,
           yoyo: true,
           repeat: 2,
           onComplete: () => {
+            warningLine.destroy();
+
+            if (this.bossDefeated || this.bossVulnerable) return;
+
             // Full beam fires
-            beam.setAlpha(0.9);
+            const beam = this.add.rectangle(this.bossArenaX, beamY, this.bossArenaWidth, 20, 0xff2200, 0.9);
+            beam.setOrigin(0, 0.5).setDepth(75);
+            addGlow(beam, 0xff0000, 4, 0, false, 0.1, 12);
+
             this.physics.add.existing(beam, true);
 
             this.physics.add.overlap(this.player, beam, () => {
@@ -568,9 +730,19 @@ export class Zone2_APIGateway extends Phaser.Scene {
 
             this.bossBeams.push(beam);
 
+            // Particle trail along beam
+            for (let p = 0; p < 4; p++) {
+              this.time.delayedCall(p * 80, () => {
+                if (beam.active) {
+                  const px = this.bossArenaX + Math.random() * this.bossArenaWidth;
+                  createCollectBurst(this, px, beamY, 0xff4400);
+                }
+              });
+            }
+
             // Remove after a short time
             this.time.delayedCall(1200, () => {
-              beam.destroy();
+              if (beam.active) beam.destroy();
               const idx = this.bossBeams.indexOf(beam);
               if (idx >= 0) this.bossBeams.splice(idx, 1);
             });
@@ -578,6 +750,53 @@ export class Zone2_APIGateway extends Phaser.Scene {
         });
       });
     });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  429 barrage: "429" text objects rain down from above               */
+  /* ------------------------------------------------------------------ */
+
+  bossFire429Barrage() {
+    if (this.bossDefeated || this.bossVulnerable) return;
+
+    const count = this.bossPhase2 ? 10 : 6;
+
+    for (let i = 0; i < count; i++) {
+      this.time.delayedCall(i * 150, () => {
+        if (this.bossDefeated || this.bossVulnerable) return;
+
+        const spawnX = this.bossArenaX + 100 + Math.random() * (this.bossArenaWidth - 200);
+        const text429 = this.add.text(spawnX, -30, '429', {
+          fontFamily: '"Courier New", monospace',
+          fontSize: '32px',
+          fontStyle: 'bold',
+          color: '#ff4444',
+          resolution: 2,
+        });
+        text429.setOrigin(0.5).setDepth(76);
+        addGlow(text429, 0xff0000, 4, 0, false, 0.1, 12);
+
+        this.physics.add.existing(text429, false);
+        text429.body.setAllowGravity(false);
+        text429.body.setVelocityY(this.bossPhase2 ? 400 : 280);
+        text429.body.setSize(text429.width, text429.height);
+
+        this.physics.add.overlap(this.player, text429, () => {
+          if (this.player._invulnerable) return;
+          this.hitRateLimiterBoss(text429);
+          text429.destroy();
+        }, null, this);
+
+        this.boss429s.push(text429);
+
+        // Destroy when off-screen
+        this.time.delayedCall(3500, () => {
+          if (text429.active) text429.destroy();
+          const idx = this.boss429s.indexOf(text429);
+          if (idx >= 0) this.boss429s.splice(idx, 1);
+        });
+      });
+    }
   }
 
   hitRateLimiterBoss() {
@@ -606,23 +825,70 @@ export class Zone2_APIGateway extends Phaser.Scene {
     if (this.bossDefeated) return;
 
     this.bossVulnerable = true;
+
+    // Dramatic vulnerability: boss shrinks, turns bright green
     this.boss.setTint(0x44ff44);
+    this.tweens.add({
+      targets: this.boss,
+      scaleX: 1.8,
+      scaleY: 1.8,
+      duration: 300,
+      ease: 'Back.easeOut',
+    });
+
+    // Ring of particles expanding outward
+    const ringCount = 16;
+    for (let i = 0; i < ringCount; i++) {
+      const angle = (i / ringCount) * Math.PI * 2;
+      const particle = this.add.circle(this.boss.x, this.boss.y, 6, 0x44ff44);
+      particle.setBlendMode(Phaser.BlendModes.ADD);
+      particle.setDepth(81);
+      addGlow(particle, 0x44ff44, 3, 0, false, 0.1, 8);
+
+      this.tweens.add({
+        targets: particle,
+        x: this.boss.x + Math.cos(angle) * 200,
+        y: this.boss.y + Math.sin(angle) * 200,
+        alpha: 0,
+        scale: 0,
+        duration: 600,
+        ease: 'Power2',
+        onComplete: () => particle.destroy(),
+      });
+    }
 
     // Flash text
-    const hitText = this.add.text(this.bossArenaCenterX, this.bossArenaCenterY - 120, 'COOLDOWN - STRIKE NOW!', {
+    const hitText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 180, 'COOLDOWN - STRIKE NOW!', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '20px',
+      fontSize: '24px',
       fontStyle: 'bold',
       color: '#44ff44',
-    }).setOrigin(0.5).setDepth(300).setScrollFactor(0, 0);
-    // Position it relative to camera
-    hitText.setPosition(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 180);
-    addGlow(hitText, 0x44ff44, 4, 0, false, 0.1, 16);
+      resolution: 2,
+    }).setOrigin(0.5).setDepth(300).setScrollFactor(0);
+    addGlow(hitText, 0x44ff44, 6, 0, false, 0.1, 20);
+
+    // Pulsing text
+    this.tweens.add({
+      targets: hitText,
+      alpha: { from: 0.6, to: 1 },
+      scale: { from: 0.95, to: 1.05 },
+      duration: 300,
+      yoyo: true,
+      repeat: -1,
+    });
 
     this.time.delayedCall(2000, () => {
       this.bossVulnerable = false;
       if (!this.bossDefeated) {
-        this.boss.setTint(0xff2200);
+        this.boss.setTint(this.bossPhase2 ? 0xaa00ff : 0xff2200);
+        // Restore boss scale
+        this.tweens.add({
+          targets: this.boss,
+          scaleX: 3,
+          scaleY: 3,
+          duration: 300,
+          ease: 'Power2',
+        });
       }
       hitText.destroy();
     });
@@ -644,10 +910,21 @@ export class Zone2_APIGateway extends Phaser.Scene {
     // Camera shake
     this.cameras.main.shake(200, 0.012);
 
-    // Flash boss red
+    // Flash boss white
     this.boss.setTint(0xffffff);
     this.time.delayedCall(150, () => {
-      if (!this.bossDefeated) this.boss.setTint(0xff2200);
+      if (!this.bossDefeated) {
+        this.boss.setTint(this.bossPhase2 ? 0xaa00ff : 0xff2200);
+      }
+    });
+
+    // Restore boss scale after vulnerability shrink
+    this.tweens.add({
+      targets: this.boss,
+      scaleX: 3,
+      scaleY: 3,
+      duration: 300,
+      ease: 'Power2',
     });
 
     // Update HP bar
@@ -664,9 +941,78 @@ export class Zone2_APIGateway extends Phaser.Scene {
     const pushDir = this.player.x > this.boss.x ? 1 : -1;
     this.player.body.setVelocity(pushDir * 350, -200);
 
+    // Phase 2 trigger at 2 HP
+    if (this.bossHP <= 2 && !this.bossPhase2) {
+      this.enterBossPhase2();
+    }
+
     if (this.bossHP <= 0) {
       this.defeatBoss();
     }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Boss Phase 2: enraged mode at 2 HP                                */
+  /* ------------------------------------------------------------------ */
+
+  enterBossPhase2() {
+    this.bossPhase2 = true;
+    this.bossMovementSpeed = 1.6;
+
+    // Boss turns purple
+    this.boss.setTint(0xaa00ff);
+    addGlow(this.boss, 0xaa00ff, 8, 0, false, 0.1, 40);
+
+    // Screen flash purple
+    const purpleFlash = this.add.rectangle(
+      this.bossArenaCenterX, this.bossArenaCenterY,
+      this.bossArenaWidth, GAME.HEIGHT,
+      0xaa00ff, 0.4
+    );
+    purpleFlash.setDepth(200);
+    this.tweens.add({
+      targets: purpleFlash,
+      alpha: 0,
+      duration: 600,
+      onComplete: () => purpleFlash.destroy(),
+    });
+
+    // Phase 2 announcement
+    const phaseText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 240, 'PHASE 2: ENRAGED', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '32px',
+      fontStyle: 'bold',
+      color: '#aa00ff',
+      resolution: 2,
+    }).setOrigin(0.5).setDepth(310).setScrollFactor(0);
+    addGlow(phaseText, 0xaa00ff, 6, 0, false, 0.1, 20);
+
+    this.tweens.add({
+      targets: phaseText,
+      alpha: 0,
+      y: phaseText.y - 40,
+      duration: 2000,
+      delay: 1000,
+      onComplete: () => phaseText.destroy(),
+    });
+
+    // Update boss title color
+    if (this._bossTitleText) {
+      this._bossTitleText.setColor('#aa00ff');
+    }
+
+    // HP bar turns purple
+    this.bossHPBar.setFillStyle(0xaa00ff);
+
+    // Speed up attack timer
+    if (this.bossAttackTimer) this.bossAttackTimer.remove();
+    this.bossAttackTimer = this.time.addEvent({
+      delay: 2200,
+      callback: () => this.bossAttackCycle(),
+      loop: true,
+    });
+
+    this.cameras.main.shake(300, 0.015);
   }
 
   defeatBoss() {
@@ -676,28 +1022,49 @@ export class Zone2_APIGateway extends Phaser.Scene {
     if (this.bossAttackTimer) this.bossAttackTimer.remove();
     if (this.bossVulnTimer) this.bossVulnTimer.remove();
 
-    // Destroy remaining beams
-    this.bossBeams.forEach(b => b.destroy());
+    // Destroy remaining beams and 429s
+    this.bossBeams.forEach(b => { if (b.active) b.destroy(); });
     this.bossBeams = [];
+    this.boss429s.forEach(b => { if (b.active) b.destroy(); });
+    this.boss429s = [];
 
-    // Massive particle explosion
-    for (let i = 0; i < 5; i++) {
-      this.time.delayedCall(i * 100, () => {
-        createCollectBurst(this, this.boss.x + Phaser.Math.Between(-40, 40), this.boss.y + Phaser.Math.Between(-40, 40), 0xff4400);
-        createCollectBurst(this, this.boss.x + Phaser.Math.Between(-40, 40), this.boss.y + Phaser.Math.Between(-40, 40), 0xffaa00);
-        createCollectBurst(this, this.boss.x + Phaser.Math.Between(-40, 40), this.boss.y + Phaser.Math.Between(-40, 40), 0xff0000);
+    // Chain of explosions across the arena
+    for (let i = 0; i < 12; i++) {
+      this.time.delayedCall(i * 120, () => {
+        const ex = this.bossArenaX + 200 + Math.random() * (this.bossArenaWidth - 400);
+        const ey = 150 + Math.random() * (GAME.HEIGHT - 300);
+        createCollectBurst(this, ex, ey, 0xff4400);
+        createCollectBurst(this, ex, ey, 0xffaa00);
+        createCollectBurst(this, ex, ey, 0xff0000);
+        this.cameras.main.shake(100, 0.008);
       });
     }
 
-    // Camera shake
-    this.cameras.main.shake(500, 0.02);
-
-    // Boss explodes
+    // Screen flash white
+    const whiteFlash = this.add.rectangle(
+      this.bossArenaCenterX, this.bossArenaCenterY,
+      this.bossArenaWidth + 200, GAME.HEIGHT + 200,
+      0xffffff, 0.9
+    );
+    whiteFlash.setDepth(500);
     this.tweens.add({
-      targets: this.boss,
-      scale: 6,
+      targets: whiteFlash,
       alpha: 0,
       duration: 800,
+      delay: 200,
+      ease: 'Power2',
+      onComplete: () => whiteFlash.destroy(),
+    });
+
+    // Big camera shake
+    this.cameras.main.shake(600, 0.025);
+
+    // Boss explodes with scale-up
+    this.tweens.add({
+      targets: this.boss,
+      scale: 8,
+      alpha: 0,
+      duration: 1000,
       ease: 'Power2',
       onComplete: () => {
         this.boss.destroy();
@@ -711,8 +1078,50 @@ export class Zone2_APIGateway extends Phaser.Scene {
       duration: 600,
     });
 
+    // "RATE LIMIT BYPASSED" neon text appears after explosions
+    this.time.delayedCall(800, () => {
+      const bypassText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2, 'RATE LIMIT BYPASSED', {
+        fontFamily: '"Courier New", monospace',
+        fontSize: '48px',
+        fontStyle: 'bold',
+        color: '#44ff44',
+        resolution: 2,
+      }).setOrigin(0.5).setDepth(310).setScrollFactor(0);
+      bypassText.setAlpha(0).setScale(0.5);
+      addGlow(bypassText, 0x44ff44, 8, 0, false, 0.1, 32);
+
+      this.tweens.add({
+        targets: bypassText,
+        alpha: 1,
+        scale: 1,
+        duration: 500,
+        ease: 'Back.easeOut',
+      });
+
+      // Pulsing neon glow on the text
+      this.tweens.add({
+        targets: bypassText,
+        alpha: { from: 0.7, to: 1 },
+        scale: { from: 0.98, to: 1.02 },
+        duration: 400,
+        yoyo: true,
+        repeat: 4,
+        delay: 500,
+      });
+
+      // Fade out the victory text after a moment
+      this.tweens.add({
+        targets: bypassText,
+        alpha: 0,
+        y: bypassText.y - 40,
+        duration: 800,
+        delay: 3000,
+        onComplete: () => bypassText.destroy(),
+      });
+    });
+
     // Spawn portal after a short delay
-    this.time.delayedCall(1200, () => {
+    this.time.delayedCall(1800, () => {
       // Restore camera to follow player and full world bounds
       this.cameras.main.setBounds(0, 0, WORLD.width, GAME.HEIGHT);
       this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
@@ -729,6 +1138,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       fontSize: '28px',
       fontStyle: 'bold',
       color: '#44ff44',
+      resolution: 2,
     });
     approvedText.setOrigin(0.5).setDepth(90);
     addGlow(approvedText, 0x44ff44, 4, 0, false, 0.1, 16);
@@ -769,6 +1179,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       fontFamily: '"Courier New", monospace',
       fontSize: '18px',
       color: '#ff00ff',
+      resolution: 2,
     }).setScrollFactor(0).setDepth(200);
     addGlow(hudTitle, 0xff00ff, 2, 0, false, 0.1, 8);
   }
@@ -818,11 +1229,12 @@ export class Zone2_APIGateway extends Phaser.Scene {
       }
     }
 
-    // Boss figure-8 movement
+    // Boss figure-8 movement (speed increases in phase 2)
     if (this.bossActive && !this.bossDefeated && this.boss.active) {
       this.bossPhaseTime += delta * 0.001;
-      const figureEightX = Math.sin(this.bossPhaseTime * 0.8) * 350;
-      const figureEightY = Math.sin(this.bossPhaseTime * 1.6) * 200;
+      const spd = this.bossMovementSpeed;
+      const figureEightX = Math.sin(this.bossPhaseTime * 0.8 * spd) * 350;
+      const figureEightY = Math.sin(this.bossPhaseTime * 1.6 * spd) * 200;
       this.boss.x = this.bossArenaCenterX + figureEightX;
       this.boss.y = this.bossArenaCenterY + figureEightY;
       this.boss.body.updateFromGameObject();

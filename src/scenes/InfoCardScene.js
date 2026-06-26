@@ -52,6 +52,7 @@ export class InfoCardScene extends Phaser.Scene {
       fontSize: '14px',
       color: '#00ffff',
       letterSpacing: 4,
+      resolution: 2,
     });
     this.cardContainer.add(stageLabel);
 
@@ -60,6 +61,7 @@ export class InfoCardScene extends Phaser.Scene {
       fontSize: '32px',
       fontStyle: 'bold',
       color: '#ffffff',
+      resolution: 2,
     });
     this.cardContainer.add(titleText);
 
@@ -69,6 +71,7 @@ export class InfoCardScene extends Phaser.Scene {
       color: '#ccddff',
       wordWrap: { width: cardW - 60 },
       lineSpacing: 6,
+      resolution: 2,
     });
     this.cardContainer.add(conceptText);
 
@@ -80,6 +83,7 @@ export class InfoCardScene extends Phaser.Scene {
         color: '#aabbdd',
         wordWrap: { width: cardW - 100 },
         lineSpacing: 3,
+        resolution: 2,
       });
       this.cardContainer.add(bullet);
       bulletY += bullet.height + 10;
@@ -98,6 +102,7 @@ export class InfoCardScene extends Phaser.Scene {
         color: '#ffd700',
         wordWrap: { width: cardW - 100 },
         lineSpacing: 3,
+        resolution: 2,
       });
       this.cardContainer.add(factText);
     }
@@ -109,9 +114,10 @@ export class InfoCardScene extends Phaser.Scene {
 
     const btnText = this.add.text(0, btnY, 'CONTINUE', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '20px',
+      fontSize: '22px',
       fontStyle: 'bold',
       color: '#00ffff',
+      resolution: 2,
     });
     btnText.setOrigin(0.5);
     this.cardContainer.add(btnText);
