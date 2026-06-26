@@ -6,6 +6,7 @@ import { Player } from '../objects/Player.js';
 import { ParallaxBackground } from '../objects/ParallaxBackground.js';
 import { generateStarField, generateNebula } from '../effects/procedural.js';
 import { createAmbientParticles, createPortalParticles, createCollectBurst } from '../effects/particles.js';
+import { addGlow, addPostBloom } from '../utils/helpers.js';
 
 const PALETTE = PALETTES.ROUTER_NEXUS;
 const WORLD = ZONE_WORLDS.ROUTER_NEXUS;
@@ -14,29 +15,29 @@ const PATH_COLORS = PALETTE.paths;
 
 const ROUTING_SECTIONS = [
   {
-    splitX: 1200,
-    mergeX: 3000,
+    splitX: 1800,
+    mergeX: 4500,
     paths: [
-      { y: 180, load: 0.3, label: 'GPU-A', status: 'clear', cached: false },
-      { y: 360, load: 0.7, label: 'GPU-B', status: 'moderate', cached: true },
-      { y: 540, load: 0.95, label: 'GPU-C', status: 'overloaded', cached: false },
+      { y: 270, load: 0.3, label: 'GPU-A', status: 'clear', cached: false },
+      { y: 540, load: 0.7, label: 'GPU-B', status: 'moderate', cached: true },
+      { y: 810, load: 0.95, label: 'GPU-C', status: 'overloaded', cached: false },
     ],
   },
   {
-    splitX: 3800,
-    mergeX: 5600,
+    splitX: 5700,
+    mergeX: 8400,
     paths: [
-      { y: 200, load: 0.85, label: 'GPU-D', status: 'congested', cached: false },
-      { y: 400, load: 0.2, label: 'GPU-E', status: 'clear', cached: true },
-      { y: 580, load: 0.5, label: 'GPU-F', status: 'moderate', cached: false },
+      { y: 300, load: 0.85, label: 'GPU-D', status: 'congested', cached: false },
+      { y: 600, load: 0.2, label: 'GPU-E', status: 'clear', cached: true },
+      { y: 870, load: 0.5, label: 'GPU-F', status: 'moderate', cached: false },
     ],
   },
   {
-    splitX: 6200,
-    mergeX: 7400,
+    splitX: 9300,
+    mergeX: 11100,
     paths: [
-      { y: 250, load: 0.15, label: 'GPU-G', status: 'clear', cached: true },
-      { y: 500, load: 0.6, label: 'GPU-H', status: 'moderate', cached: false },
+      { y: 375, load: 0.15, label: 'GPU-G', status: 'clear', cached: true },
+      { y: 750, load: 0.6, label: 'GPU-H', status: 'moderate', cached: false },
     ],
   },
 ];
@@ -72,7 +73,7 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     this.createHUD();
 
     this.cameras.main.fadeIn(GAME.ZONE_TRANSITION_DURATION, 0, 0, 0);
-    this.cameras.main.postFX.addBloom(0xffffff, 0.5, 0.5, 1, 1.3, 4);
+    addPostBloom(this.cameras.main, 0xffffff, 0.5, 0.5, 1, 1.3, 4);
   }
 
   createBackgrounds() {
@@ -122,13 +123,13 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     const splitY = GAME.HEIGHT / 2;
     const mergeY = GAME.HEIGHT / 2;
 
-    g.lineStyle(6, 0x222222, 0.8);
+    g.lineStyle(8, 0x222222, 0.8);
     g.beginPath();
     g.moveTo(sectionIndex === 0 ? 0 : ROUTING_SECTIONS[sectionIndex - 1].mergeX, splitY);
     g.lineTo(splitX, splitY);
     g.strokePath();
 
-    g.lineStyle(3, PALETTE.accent, 0.4);
+    g.lineStyle(4, PALETTE.accent, 0.4);
     g.beginPath();
     g.moveTo(sectionIndex === 0 ? 0 : ROUTING_SECTIONS[sectionIndex - 1].mergeX, splitY);
     g.lineTo(splitX, splitY);
@@ -140,23 +141,23 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       else if (path.status === 'clear') pathColor = PATH_COLORS.clear;
       else pathColor = PATH_COLORS.congested;
 
-      g.lineStyle(6, 0x222222, 0.8);
+      g.lineStyle(8, 0x222222, 0.8);
       g.beginPath();
       g.moveTo(splitX, splitY);
-      g.lineTo(splitX + 200, path.y);
-      g.lineTo(mergeX - 200, path.y);
+      g.lineTo(splitX + 300, path.y);
+      g.lineTo(mergeX - 300, path.y);
       g.lineTo(mergeX, mergeY);
       g.strokePath();
 
-      g.lineStyle(3, pathColor, 0.5);
+      g.lineStyle(4, pathColor, 0.5);
       g.beginPath();
       g.moveTo(splitX, splitY);
-      g.lineTo(splitX + 200, path.y);
-      g.lineTo(mergeX - 200, path.y);
+      g.lineTo(splitX + 300, path.y);
+      g.lineTo(mergeX - 300, path.y);
       g.lineTo(mergeX, mergeY);
       g.strokePath();
 
-      this.createPathParticles(splitX + 200, path.y, mergeX - splitX - 400, pathColor);
+      this.createPathParticles(splitX + 300, path.y, mergeX - splitX - 600, pathColor);
     });
   }
 
@@ -177,19 +178,19 @@ export class Zone3_RouterNexus extends Phaser.Scene {
   createPathDecisionUI(section, sectionIndex) {
     const { splitX, paths } = section;
 
-    const decisionLabel = this.add.text(splitX, 40, 'CHOOSE ROUTE', {
+    const decisionLabel = this.add.text(splitX, 60, 'CHOOSE ROUTE', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '16px',
+      fontSize: '22px',
       fontStyle: 'bold',
       color: '#ffd700',
     });
     decisionLabel.setOrigin(0.5).setDepth(100);
-    decisionLabel.preFX.addGlow(0xffd700, 3, 0, false, 0.1, 12);
+    addGlow(decisionLabel, 0xffd700, 3, 0, false, 0.1, 12);
 
     paths.forEach((path, pi) => {
-      const triggerX = splitX + 150;
-      const triggerWidth = 100;
-      const triggerHeight = 80;
+      const triggerX = splitX + 225;
+      const triggerWidth = 150;
+      const triggerHeight = 120;
 
       const zone = this.add.zone(triggerX, path.y, triggerWidth, triggerHeight);
       this.physics.add.existing(zone, true);
@@ -215,29 +216,29 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       else nodeColor = PATH_COLORS.congested;
 
       nodeGfx.lineStyle(2, nodeColor, 0.8);
-      nodeGfx.strokeCircle(nodeX, nodeY, 30);
+      nodeGfx.strokeCircle(nodeX, nodeY, 45);
       nodeGfx.lineStyle(1, nodeColor, 0.4);
-      nodeGfx.strokeCircle(nodeX, nodeY, 40);
+      nodeGfx.strokeCircle(nodeX, nodeY, 60);
 
-      const nodeLabel = this.add.text(nodeX, nodeY - 50, path.label, {
+      const nodeLabel = this.add.text(nodeX, nodeY - 70, path.label, {
         fontFamily: '"Courier New", monospace',
-        fontSize: '13px',
+        fontSize: '18px',
         fontStyle: 'bold',
         color: '#ffd700',
       });
       nodeLabel.setOrigin(0.5).setDepth(21);
 
-      this.createLoadBar(nodeX - 25, nodeY + 15, 50, 8, path.load, nodeColor);
+      this.createLoadBar(nodeX - 37, nodeY + 22, 75, 12, path.load, nodeColor);
 
       if (path.cached) {
-        const cachedLabel = this.add.text(nodeX, nodeY + 30, 'CACHED', {
+        const cachedLabel = this.add.text(nodeX, nodeY + 42, 'CACHED', {
           fontFamily: '"Courier New", monospace',
-          fontSize: '10px',
+          fontSize: '14px',
           fontStyle: 'bold',
           color: '#ffd700',
         });
         cachedLabel.setOrigin(0.5).setDepth(21);
-        cachedLabel.preFX.addGlow(0xffd700, 2, 0, false, 0.1, 8);
+        addGlow(cachedLabel, 0xffd700, 2, 0, false, 0.1, 8);
 
         this.add.particles(nodeX, nodeY, 'particle_spark', {
           speed: { min: 10, max: 30 },
@@ -259,7 +260,7 @@ export class Zone3_RouterNexus extends Phaser.Scene {
 
       const statusLabel = this.add.text(nodeX, nodeY - 3, statusText, {
         fontFamily: '"Courier New", monospace',
-        fontSize: '9px',
+        fontSize: '14px',
         color: statusColor,
       });
       statusLabel.setOrigin(0.5).setDepth(21);
@@ -278,11 +279,11 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     this.prefixGroup = this.physics.add.group();
 
     const positions = [
-      { x: 600, y: 300 },
-      { x: 2500, y: 200 },
-      { x: 3500, y: 500 },
-      { x: 5200, y: 150 },
-      { x: 6800, y: 400 },
+      { x: 900, y: 450 },
+      { x: 3750, y: 300 },
+      { x: 5250, y: 750 },
+      { x: 7800, y: 225 },
+      { x: 10200, y: 600 },
     ];
 
     positions.forEach((pos, i) => {
@@ -291,12 +292,12 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       fragment.setTint(0xffd700);
       fragment.setBlendMode(Phaser.BlendModes.ADD);
       fragment.setDepth(75);
-      fragment.preFX.addGlow(0xffd700, 3, 0, false, 0.1, 12);
+      addGlow(fragment, 0xffd700, 3, 0, false, 0.1, 12);
       fragment._word = PREFIX_FRAGMENTS[i];
 
-      const label = this.add.text(pos.x, pos.y - 20, PREFIX_FRAGMENTS[i], {
+      const label = this.add.text(pos.x, pos.y - 28, PREFIX_FRAGMENTS[i], {
         fontFamily: '"Courier New", monospace',
-        fontSize: '12px',
+        fontSize: '18px',
         fontStyle: 'bold',
         color: '#ffd700',
       });
@@ -390,12 +391,12 @@ export class Zone3_RouterNexus extends Phaser.Scene {
   showRoutingFeedback(text, color, x, y) {
     const feedback = this.add.text(x, y, text, {
       fontFamily: '"Courier New", monospace',
-      fontSize: '16px',
+      fontSize: '22px',
       fontStyle: 'bold',
       color: color,
     });
     feedback.setOrigin(0.5).setDepth(300);
-    feedback.preFX.addGlow(
+    addGlow(feedback,
       Phaser.Display.Color.HexStringToColor(color).color,
       3, 0, false, 0.1, 12
     );
@@ -415,18 +416,18 @@ export class Zone3_RouterNexus extends Phaser.Scene {
 
     const nexusGfx = this.add.graphics().setDepth(80);
     nexusGfx.lineStyle(3, 0xffd700, 0.8);
-    nexusGfx.strokeCircle(this.portalX, this.portalY, 50);
+    nexusGfx.strokeCircle(this.portalX, this.portalY, 75);
     nexusGfx.lineStyle(2, 0xffd700, 0.4);
-    nexusGfx.strokeCircle(this.portalX, this.portalY, 65);
+    nexusGfx.strokeCircle(this.portalX, this.portalY, 95);
     nexusGfx.lineStyle(1, 0xffd700, 0.2);
-    nexusGfx.strokeCircle(this.portalX, this.portalY, 80);
+    nexusGfx.strokeCircle(this.portalX, this.portalY, 120);
 
     this.portal = this.add.image(this.portalX, this.portalY, 'portal_ring');
     this.portal.setBlendMode(Phaser.BlendModes.ADD);
     this.portal.setDepth(85);
     this.portal.setScale(1.8);
     this.portal.setTint(0xffd700);
-    this.portal.preFX.addGlow(0xffd700, 6, 0, false, 0.1, 24);
+    addGlow(this.portal, 0xffd700, 6, 0, false, 0.1, 24);
 
     this.tweens.add({
       targets: this.portal,
@@ -451,21 +452,22 @@ export class Zone3_RouterNexus extends Phaser.Scene {
   }
 
   createHUD() {
-    this.add.text(20, 20, 'ZONE 3: ROUTER NEXUS', {
+    const hudTitle = this.add.text(20, 20, 'ZONE 3: ROUTER NEXUS', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '14px',
+      fontSize: '18px',
       color: '#ffd700',
-    }).setScrollFactor(0).setDepth(200).preFX.addGlow(0xffd700, 2, 0, false, 0.1, 8);
+    }).setScrollFactor(0).setDepth(200);
+    addGlow(hudTitle, 0xffd700, 2, 0, false, 0.1, 8);
 
-    this.prefixHUD = this.add.text(20, 45, 'Prefix: []', {
+    this.prefixHUD = this.add.text(20, 50, 'Prefix: []', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '12px',
+      fontSize: '18px',
       color: '#ffd700',
     }).setScrollFactor(0).setDepth(200);
 
     this.scoreHUD = this.add.text(GAME.WIDTH - 20, 20, 'Score: 0', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '14px',
+      fontSize: '18px',
       color: '#ffd700',
     }).setOrigin(1, 0).setScrollFactor(0).setDepth(200);
   }

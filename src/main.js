@@ -7,10 +7,17 @@ import { Zone2_APIGateway } from './scenes/Zone2_APIGateway.js';
 import { Zone3_RouterNexus } from './scenes/Zone3_RouterNexus.js';
 import { InfoCardScene } from './scenes/InfoCardScene.js';
 
+window.onerror = (msg, src, line, col, err) => {
+  const el = document.createElement('pre');
+  el.style.cssText = 'position:fixed;top:0;left:0;color:#ff4444;background:#000;padding:20px;font-size:14px;z-index:99999;max-width:100vw;white-space:pre-wrap';
+  el.textContent = `ERROR: ${msg}\n${src}:${line}:${col}\n${err?.stack || ''}`;
+  document.body.appendChild(el);
+};
+
 const config = {
-  type: Phaser.WEBGL,
-  width: GAME.WIDTH,
-  height: GAME.HEIGHT,
+  type: Phaser.AUTO,
+  width: 1920,
+  height: 1080,
   parent: 'game-container',
   backgroundColor: '#000000',
   scale: {
@@ -23,6 +30,11 @@ const config = {
       gravity: { y: 0 },
       debug: false,
     },
+  },
+  render: {
+    pixelArt: false,
+    antialias: true,
+    antialiasGL: true,
   },
   scene: [
     BootScene,

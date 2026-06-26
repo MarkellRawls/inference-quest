@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME, SCENES } from '../config/constants.js';
+import { addGlow } from '../utils/helpers.js';
 
 export class InfoCardScene extends Phaser.Scene {
   constructor() {
@@ -31,84 +32,84 @@ export class InfoCardScene extends Phaser.Scene {
     this.cardContainer.setDepth(10);
     this.cardContainer.setScale(0);
 
-    const cardW = 760;
-    const cardH = 480;
+    const cardW = 1000;
+    const cardH = 650;
 
     const cardBg = this.add.graphics();
     cardBg.fillStyle(0x0a0a2a, 0.95);
-    cardBg.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 16);
+    cardBg.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 20);
     cardBg.lineStyle(2, 0x00ffff, 0.6);
-    cardBg.strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 16);
+    cardBg.strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 20);
     this.cardContainer.add(cardBg);
 
     const headerBg = this.add.graphics();
     headerBg.fillStyle(0x00ffff, 0.08);
-    headerBg.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, 60, { tl: 16, tr: 16, bl: 0, br: 0 });
+    headerBg.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, 80, { tl: 20, tr: 20, bl: 0, br: 0 });
     this.cardContainer.add(headerBg);
 
-    const stageLabel = this.add.text(-cardW / 2 + 24, -cardH / 2 + 12, 'CONCEPT UNLOCKED', {
+    const stageLabel = this.add.text(-cardW / 2 + 30, -cardH / 2 + 14, 'CONCEPT UNLOCKED', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '11px',
+      fontSize: '14px',
       color: '#00ffff',
       letterSpacing: 4,
     });
     this.cardContainer.add(stageLabel);
 
-    const titleText = this.add.text(-cardW / 2 + 24, -cardH / 2 + 30, title, {
+    const titleText = this.add.text(-cardW / 2 + 30, -cardH / 2 + 38, title, {
       fontFamily: '"Courier New", monospace',
-      fontSize: '24px',
+      fontSize: '32px',
       fontStyle: 'bold',
       color: '#ffffff',
     });
     this.cardContainer.add(titleText);
 
-    const conceptText = this.add.text(-cardW / 2 + 24, -cardH / 2 + 80, concept, {
+    const conceptText = this.add.text(-cardW / 2 + 30, -cardH / 2 + 100, concept, {
       fontFamily: '"Courier New", monospace',
-      fontSize: '14px',
+      fontSize: '18px',
       color: '#ccddff',
-      wordWrap: { width: cardW - 48 },
-      lineSpacing: 4,
+      wordWrap: { width: cardW - 60 },
+      lineSpacing: 6,
     });
     this.cardContainer.add(conceptText);
 
-    let bulletY = conceptText.y + conceptText.height + 20;
+    let bulletY = conceptText.y + conceptText.height + 24;
     for (const detail of details) {
-      const bullet = this.add.text(-cardW / 2 + 40, bulletY, '> ' + detail, {
+      const bullet = this.add.text(-cardW / 2 + 50, bulletY, '> ' + detail, {
         fontFamily: '"Courier New", monospace',
-        fontSize: '13px',
+        fontSize: '16px',
         color: '#aabbdd',
-        wordWrap: { width: cardW - 80 },
-        lineSpacing: 2,
+        wordWrap: { width: cardW - 100 },
+        lineSpacing: 3,
       });
       this.cardContainer.add(bullet);
-      bulletY += bullet.height + 8;
+      bulletY += bullet.height + 10;
     }
 
     if (funFact) {
-      const factY = Math.max(bulletY + 12, cardH / 2 - 90);
+      const factY = Math.max(bulletY + 16, cardH / 2 - 110);
       const factBg = this.add.graphics();
       factBg.fillStyle(0xffd700, 0.06);
-      factBg.fillRoundedRect(-cardW / 2 + 16, factY, cardW - 32, 40, 8);
+      factBg.fillRoundedRect(-cardW / 2 + 20, factY, cardW - 40, 50, 10);
       this.cardContainer.add(factBg);
 
-      const factText = this.add.text(-cardW / 2 + 32, factY + 6, 'FUN FACT: ' + funFact, {
+      const factText = this.add.text(-cardW / 2 + 40, factY + 8, 'FUN FACT: ' + funFact, {
         fontFamily: '"Courier New", monospace',
-        fontSize: '11px',
+        fontSize: '14px',
         color: '#ffd700',
-        wordWrap: { width: cardW - 80 },
-        lineSpacing: 2,
+        wordWrap: { width: cardW - 100 },
+        lineSpacing: 3,
       });
       this.cardContainer.add(factText);
     }
 
-    const btnY = cardH / 2 - 36;
+    const btnY = cardH / 2 - 45;
     const btnBg = this.add.image(0, btnY, 'button_bg');
-    btnBg.setScale(0.7, 0.8);
+    btnBg.setScale(0.9, 1);
     this.cardContainer.add(btnBg);
 
     const btnText = this.add.text(0, btnY, 'CONTINUE', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '16px',
+      fontSize: '20px',
       fontStyle: 'bold',
       color: '#00ffff',
     });
@@ -117,12 +118,12 @@ export class InfoCardScene extends Phaser.Scene {
 
     btnBg.setInteractive({ useHandCursor: true });
 
-    const btnGlow = btnBg.preFX.addGlow(0x00ffff, 2, 0, false, 0.1, 12);
+    const btnGlow = addGlow(btnBg, 0x00ffff, 2, 0, false, 0.1, 12);
     btnBg.on('pointerover', () => {
-      this.tweens.add({ targets: btnGlow, outerStrength: 6, duration: 200 });
+      if (btnGlow) this.tweens.add({ targets: btnGlow, outerStrength: 6, duration: 200 });
     });
     btnBg.on('pointerout', () => {
-      this.tweens.add({ targets: btnGlow, outerStrength: 2, duration: 200 });
+      if (btnGlow) this.tweens.add({ targets: btnGlow, outerStrength: 2, duration: 200 });
     });
     btnBg.on('pointerdown', () => {
       this.dismiss(nextZone, callingScene, playerData);

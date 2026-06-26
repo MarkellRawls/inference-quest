@@ -6,6 +6,7 @@ import { Player } from '../objects/Player.js';
 import { ParallaxBackground } from '../objects/ParallaxBackground.js';
 import { generateStarField, generateNebula } from '../effects/procedural.js';
 import { createAmbientParticles, createPortalParticles, createCollectBurst } from '../effects/particles.js';
+import { addGlow, addPostBloom } from '../utils/helpers.js';
 
 const PALETTE = PALETTES.PROMPT_VOID;
 const WORLD = ZONE_WORLDS.PROMPT_VOID;
@@ -43,10 +44,10 @@ export class Zone1_PromptVoid extends Phaser.Scene {
     this.setupCamera();
 
     this.cameras.main.fadeIn(GAME.ZONE_TRANSITION_DURATION, 0, 0, 0);
-    this.cameras.main.postFX.addBloom(0xffffff, 0.5, 0.5, 1, 1.2, 4);
+    addPostBloom(this.cameras.main, 0xffffff, 0.5, 0.5, 1, 1.2, 4);
 
     this.tutorialPhase = 0;
-    this.showTutorialText('Use WASD or Arrow Keys to move', 200, GAME.HEIGHT / 2 - 80);
+    this.showTutorialText('Use WASD or Arrow Keys to move', 300, GAME.HEIGHT / 2 - 120);
   }
 
   createBackgrounds() {
@@ -76,7 +77,7 @@ export class Zone1_PromptVoid extends Phaser.Scene {
   }
 
   createPlayer() {
-    this.player = new Player(this, 150, GAME.HEIGHT / 2);
+    this.player = new Player(this, 225, GAME.HEIGHT / 2);
     this.player.setZonePalette(PALETTE);
   }
 
@@ -84,14 +85,14 @@ export class Zone1_PromptVoid extends Phaser.Scene {
     this.floatingTexts = [];
     const textStyle = {
       fontFamily: '"Courier New", monospace',
-      fontSize: '16px',
+      fontSize: '22px',
       color: '#6a5acd',
     };
 
     for (let i = 0; i < 25; i++) {
       const word = PROMPT_FRAGMENTS[i % PROMPT_FRAGMENTS.length];
-      const x = 400 + Math.random() * (WORLD.width - 600);
-      const y = 50 + Math.random() * (GAME.HEIGHT - 100);
+      const x = 600 + Math.random() * (WORLD.width - 900);
+      const y = 75 + Math.random() * (GAME.HEIGHT - 150);
       const txt = this.add.text(x, y, word, textStyle);
       txt.setAlpha(0.15 + Math.random() * 0.25);
       txt.setDepth(5);
@@ -104,8 +105,8 @@ export class Zone1_PromptVoid extends Phaser.Scene {
 
   createTutorialPhases() {
     this.dashWall = this.physics.add.staticGroup();
-    const wallX = 1000;
-    for (let y = 0; y < GAME.HEIGHT; y += 50) {
+    const wallX = 1500;
+    for (let y = 0; y < GAME.HEIGHT; y += 75) {
       const wallPiece = this.add.text(wallX, y, '|||||', {
         fontFamily: '"Courier New", monospace',
         fontSize: '24px',
@@ -113,7 +114,7 @@ export class Zone1_PromptVoid extends Phaser.Scene {
       });
       wallPiece.setAlpha(0.5);
       wallPiece.setDepth(15);
-      wallPiece.preFX.addGlow(PALETTE.accent, 2, 0, false, 0.1, 8);
+      addGlow(wallPiece, PALETTE.accent, 2, 0, false, 0.1, 8);
       this.dashWall.add(wallPiece);
     }
 
@@ -138,21 +139,21 @@ export class Zone1_PromptVoid extends Phaser.Scene {
     this.collectedCount = 0;
     this.totalCollectibles = COLLECTIBLE_WORDS.length;
 
-    const startX = 1400;
+    const startX = 2100;
     COLLECTIBLE_WORDS.forEach((word, i) => {
-      const x = startX + i * 120 + Math.random() * 40;
-      const y = 200 + Math.random() * 320;
+      const x = startX + i * 180 + Math.random() * 60;
+      const y = 300 + Math.random() * 480;
 
       const orb = this.physics.add.sprite(x, y, 'player_orb');
       orb.setScale(0.4);
       orb.setBlendMode(Phaser.BlendModes.ADD);
       orb.setDepth(80);
       orb.setTint(PALETTE.accent);
-      orb.preFX.addGlow(PALETTE.accent, 3, 0, false, 0.1, 16);
+      addGlow(orb, PALETTE.accent, 3, 0, false, 0.1, 16);
 
-      const label = this.add.text(x, y - 25, word, {
+      const label = this.add.text(x, y - 38, word, {
         fontFamily: '"Courier New", monospace',
-        fontSize: '14px',
+        fontSize: '18px',
         color: '#e0e0ff',
         fontStyle: 'bold',
       });
@@ -163,7 +164,7 @@ export class Zone1_PromptVoid extends Phaser.Scene {
 
       this.tweens.add({
         targets: [orb, label],
-        y: y - 8,
+        y: y - 12,
         duration: 1500 + Math.random() * 500,
         ease: 'Sine.easeInOut',
         yoyo: true,
@@ -175,15 +176,15 @@ export class Zone1_PromptVoid extends Phaser.Scene {
 
     this.physics.add.overlap(this.player, this.collectibles, this.collectToken, null, this);
 
-    this.collectCounter = this.add.text(GAME.WIDTH - 20, 20, `0 / ${this.totalCollectibles}`, {
+    this.collectCounter = this.add.text(GAME.WIDTH - 30, 30, `0 / ${this.totalCollectibles}`, {
       fontFamily: '"Courier New", monospace',
-      fontSize: '18px',
+      fontSize: '24px',
       color: '#e0e0ff',
     });
     this.collectCounter.setOrigin(1, 0);
     this.collectCounter.setScrollFactor(0);
     this.collectCounter.setDepth(200);
-    this.collectCounter.preFX.addGlow(PALETTE.accent, 2, 0, false, 0.1, 12);
+    addGlow(this.collectCounter, PALETTE.accent, 2, 0, false, 0.1, 12);
     this.collectCounter.setAlpha(0);
   }
 
@@ -196,12 +197,12 @@ export class Zone1_PromptVoid extends Phaser.Scene {
     this.portal.setBlendMode(Phaser.BlendModes.ADD);
     this.portal.setDepth(85);
     this.portal.setScale(0);
-    this.portal.preFX.addGlow(0x00ffff, 4, 0, false, 0.1, 24);
+    addGlow(this.portal, 0x00ffff, 4, 0, false, 0.1, 24);
 
     this.portalParticles = createPortalParticles(this, this.portalX, this.portalY, 0x00ffff);
     this.portalParticles.setVisible(false);
 
-    this.portalZone = this.add.zone(this.portalX, this.portalY, 60, 60);
+    this.portalZone = this.add.zone(this.portalX, this.portalY, 90, 90);
     this.physics.add.existing(this.portalZone, true);
     this.physics.add.overlap(this.player, this.portalZone, () => {
       if (this.portalActive) this.exitZone();
@@ -216,11 +217,11 @@ export class Zone1_PromptVoid extends Phaser.Scene {
   showTutorialText(message, x, y) {
     const txt = this.add.text(x, y, '', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '20px',
+      fontSize: '28px',
       color: '#e0e0ff',
     });
     txt.setDepth(200);
-    txt.preFX.addGlow(PALETTE.accent, 3, 0, false, 0.1, 16);
+    addGlow(txt, PALETTE.accent, 3, 0, false, 0.1, 16);
 
     let charIndex = 0;
     this.time.addEvent({
@@ -277,7 +278,7 @@ export class Zone1_PromptVoid extends Phaser.Scene {
       repeat: -1,
     });
 
-    this.showTutorialText('Portal activated! Enter to continue...', this.portalX - 200, this.portalY - 80);
+    this.showTutorialText('Portal activated! Enter to continue...', this.portalX - 300, this.portalY - 120);
   }
 
   exitZone() {
@@ -315,7 +316,7 @@ export class Zone1_PromptVoid extends Phaser.Scene {
 
     for (const txt of this.floatingTexts) {
       txt.x -= txt._driftSpeed * delta * 0.001;
-      txt.y = txt._baseY + Math.sin(time * 0.001 + txt._bobOffset) * 8;
+      txt.y = txt._baseY + Math.sin(time * 0.001 + txt._bobOffset) * 12;
       if (txt.x < -100) {
         txt.x = WORLD.width + 100;
       }
@@ -323,20 +324,20 @@ export class Zone1_PromptVoid extends Phaser.Scene {
 
     const px = this.player.x;
 
-    if (!this.dashTriggerShown && px > 700) {
+    if (!this.dashTriggerShown && px > 1050) {
       this.dashTriggerShown = true;
-      this.showTutorialText('Press SPACE to dash through barriers', 750, GAME.HEIGHT / 2 - 100);
+      this.showTutorialText('Press SPACE to dash through barriers', 1125, GAME.HEIGHT / 2 - 150);
     }
 
     if (!this.dashWallBroken && this.player.isDashing) {
-      const wallX = 1000;
-      if (px > wallX - 40 && px < wallX + 40) {
+      const wallX = 1500;
+      if (px > wallX - 60 && px < wallX + 60) {
         this.dashWallBroken = true;
         this.dashWall.getChildren().forEach(piece => {
           this.tweens.add({
             targets: piece,
-            x: piece.x + (Math.random() - 0.5) * 200,
-            y: piece.y + (Math.random() - 0.5) * 200,
+            x: piece.x + (Math.random() - 0.5) * 300,
+            y: piece.y + (Math.random() - 0.5) * 300,
             alpha: 0,
             duration: 500,
             ease: 'Power2',
@@ -348,13 +349,13 @@ export class Zone1_PromptVoid extends Phaser.Scene {
       }
     }
 
-    if (px > 1300 && this.collectCounter.alpha === 0) {
+    if (px > 1950 && this.collectCounter.alpha === 0) {
       this.tweens.add({
         targets: this.collectCounter,
         alpha: 1,
         duration: 500,
       });
-      this.showTutorialText('Collect all prompt tokens', 1350, GAME.HEIGHT / 2 - 100);
+      this.showTutorialText('Collect all prompt tokens', 2025, GAME.HEIGHT / 2 - 150);
     }
   }
 }

@@ -1,24 +1,24 @@
 export const GAME = Object.freeze({
-  WIDTH: 1280,
-  HEIGHT: 720,
-  PLAYER_SPEED: 300,
-  PLAYER_FLOAT_SPEED: 200,
-  DASH_SPEED: 600,
+  WIDTH: 1920,
+  HEIGHT: 1080,
+  PLAYER_SPEED: 420,
+  PLAYER_FLOAT_SPEED: 280,
+  DASH_SPEED: 850,
   DASH_DURATION: 200,
   DASH_COOLDOWN: 1000,
   ZONE_TRANSITION_DURATION: 1500,
 });
 
 export const ZONE_WORLDS = Object.freeze({
-  PROMPT_VOID: { width: 3200, height: 720 },
-  API_GATEWAY: { width: 6400, height: 720 },
-  ROUTER_NEXUS: { width: 8000, height: 720 },
-  TOKENIZER_GROVE: { width: 6400, height: 720 },
-  EMBEDDING_NEBULA: { width: 6400, height: 720 },
-  ATTENTION_NEXUS: { width: 6400, height: 720 },
-  KV_CACHE_CAVERNS: { width: 6400, height: 720 },
-  DECODE_WATERFALL: { width: 1280, height: 6400 },
-  RESPONSE_STREAM: { width: 6400, height: 720 },
+  PROMPT_VOID: { width: 4800, height: 1080 },
+  API_GATEWAY: { width: 9600, height: 1080 },
+  ROUTER_NEXUS: { width: 12000, height: 1080 },
+  TOKENIZER_GROVE: { width: 9600, height: 1080 },
+  EMBEDDING_NEBULA: { width: 9600, height: 1080 },
+  ATTENTION_NEXUS: { width: 9600, height: 1080 },
+  KV_CACHE_CAVERNS: { width: 9600, height: 1080 },
+  DECODE_WATERFALL: { width: 1920, height: 9600 },
+  RESPONSE_STREAM: { width: 9600, height: 1080 },
 });
 
 export const SCENES = Object.freeze({

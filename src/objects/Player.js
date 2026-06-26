@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME } from '../config/constants.js';
+import { addGlow } from '../utils/helpers.js';
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y) {
@@ -14,7 +15,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.body.setCircle(20, 12, 12);
     this.body.setCollideWorldBounds(true);
 
-    this.glowFx = this.preFX.addGlow(0x00ffff, 4, 0, false, 0.1, 24);
+    this.glowFx = addGlow(this, 0x00ffff, 4, 0, false, 0.1, 24);
 
     this.trail = scene.add.particles(0, 0, 'player_trail', {
       follow: this,
@@ -35,31 +36,61 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.isDashing = false;
     this.dashCooldown = false;
     this.dashTime = 0;
+    this._invulnerable = false;
+    this.bobOffset = 0;
 
-    scene.tweens.add({
-      targets: this,
-      y: y - 4,
-      duration: 1500,
-      ease: 'Sine.easeInOut',
-      yoyo: true,
-      repeat: -1,
-    });
+    this.hp = 3;
+    this.maxHp = 3;
   }
 
   setZonePalette(palette) {
-    this.scene.tweens.add({
-      targets: this.glowFx,
-      outerStrength: 6,
-      duration: 800,
-      ease: 'Sine.easeInOut',
-      onUpdate: () => {
-        this.glowFx.color = palette.player;
-      },
-    });
+    if (this.glowFx) {
+      this.scene.tweens.add({
+        targets: this.glowFx,
+        outerStrength: 6,
+        duration: 800,
+        ease: 'Sine.easeInOut',
+        onUpdate: () => {
+          this.glowFx.color = palette.player;
+        },
+      });
+    }
     this.trail.setParticleTint(palette.player);
   }
 
+  takeDamage(knockbackX, knockbackY) {
+    if (this._invulnerable) return false;
+
+    this.hp--;
+    this._invulnerable = true;
+
+    if (knockbackX !== undefined) {
+      this.body.setVelocity(knockbackX, knockbackY || 0);
+    }
+
+    this.scene.tweens.add({
+      targets: this,
+      alpha: 0.3,
+      duration: 80,
+      yoyo: true,
+      repeat: 6,
+      onComplete: () => {
+        this.setAlpha(1);
+        this._invulnerable = false;
+      },
+    });
+
+    this.scene.cameras.main.shake(150, 0.008);
+    return this.hp <= 0;
+  }
+
+  heal(amount) {
+    this.hp = Math.min(this.hp + amount, this.maxHp);
+  }
+
   update(time, delta) {
+    this.bobOffset = Math.sin(time * 0.003) * 3;
+
     if (this.isDashing) {
       this.dashTime -= delta;
       if (this.dashTime <= 0) {
