@@ -14,10 +14,12 @@ window.onerror = (msg, src, line, col, err) => {
   document.body.appendChild(el);
 };
 
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
 const config = {
   type: Phaser.AUTO,
-  width: 1920,
-  height: 1080,
+  width: GAME.WIDTH,
+  height: GAME.HEIGHT,
   parent: 'game-container',
   backgroundColor: '#000000',
   scale: {
@@ -27,7 +29,7 @@ const config = {
   physics: {
     default: 'arcade',
     arcade: {
-      gravity: { y: 0 },
+      gravity: { y: GAME.GRAVITY },
       debug: false,
     },
   },
@@ -35,6 +37,7 @@ const config = {
     pixelArt: false,
     antialias: true,
     antialiasGL: true,
+    roundPixels: true,
   },
   scene: [
     BootScene,

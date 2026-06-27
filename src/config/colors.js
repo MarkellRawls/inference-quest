@@ -1,11 +1,11 @@
 export const PALETTES = Object.freeze({
   PROMPT_VOID: {
-    bg: [0x0a0a2e, 0x1a1a4e],
-    accent: 0x7b68ee,
-    particles: [0x6a5acd, 0x9370db, 0xffffff],
-    text: 0xe0e0ff,
-    player: 0x00ffff,
-    glow: 0x4444ff,
+    bg: [0x1a1040, 0x2e1866],
+    accent: 0x9b88ff,
+    particles: [0x8a7aed, 0xb390ff, 0xeeddff],
+    text: 0xf0e8ff,
+    player: 0x44ffee,
+    glow: 0x7766ee,
   },
   API_GATEWAY: {
     bg: [0x0d0221, 0x150734],

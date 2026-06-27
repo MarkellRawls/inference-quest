@@ -1,17 +1,17 @@
 export const ZONE_CARDS = {
   PROMPT_VOID: {
     title: 'The Prompt',
-    concept: 'Every AI interaction starts with a prompt -- your question or instruction to the model. This text is the raw input that will travel through the entire inference pipeline, being transformed at each stage until it becomes a response.',
+    concept: 'You survived the void. Every AI interaction starts with a prompt, and you are that prompt. The raw input that will travel through the entire inference pipeline, being transformed at each stage until it becomes a response. The Syntax Corruptor tried to scramble you into nonsense, but your signal held.',
     details: [
       'Prompts can be simple questions or complex multi-turn conversations',
       'The quality of the prompt directly affects the quality of the response',
       'System prompts set the behavior, user prompts provide the task',
     ],
-    funFact: 'Modern LLMs can process prompts with hundreds of thousands of tokens -- equivalent to several novels.',
+    funFact: 'Modern LLMs can process prompts with hundreds of thousands of tokens, equivalent to several novels.',
   },
   API_GATEWAY: {
     title: 'The API Gateway',
-    concept: 'Before your prompt reaches any AI model, it passes through an API gateway. This is the front door that handles authentication, rate limiting, and request routing -- ensuring only valid, authorized requests get through.',
+    concept: 'You breached the gateway. Before any prompt reaches an AI model, it must pass through this fortified entrance. Authentication, rate limiting, request routing: the Rate Limit Guardian enforced them all, and you slipped through its defenses. Now your request is authorized and queued.',
     details: [
       'API keys and OAuth tokens verify your identity',
       'Rate limiters prevent any single user from overwhelming the system',
@@ -22,7 +22,7 @@ export const ZONE_CARDS = {
   },
   ROUTER_NEXUS: {
     title: 'Inference Routing & llm-d',
-    concept: 'Once past the gateway, your request needs to reach a GPU that can process it. The router is the brain of the serving infrastructure -- it decides which GPU node gets your request based on current load, cached data, and request characteristics.',
+    concept: 'You conquered the Overload Sentinel and the routing is optimized. The router is the brain of the serving infrastructure, and llm-d is the scheduler that makes it sing. It decided which GPU node gets your request based on current load, cached data, and your characteristics. Your journey through the inference pipeline is complete.',
     details: [
       'Load-aware routing sends requests to the least busy GPU nodes',
       'Prefix-aware scheduling (llm-d) routes requests to nodes that already have relevant KV cache data',

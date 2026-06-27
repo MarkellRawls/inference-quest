@@ -4,46 +4,30 @@ import { PALETTES } from '../config/colors.js';
 import { ZONE_CARDS } from '../config/cards.js';
 import { Player } from '../objects/Player.js';
 import { ParallaxBackground } from '../objects/ParallaxBackground.js';
-import { generateStarField, generateNebula } from '../effects/procedural.js';
-import { createAmbientParticles, createPortalParticles, createCollectBurst } from '../effects/particles.js';
+import { createStalePacket, createLoadSpike } from '../objects/Enemy.js';
+import { createPlatform, createSolidPlatform, createGround, createMovingPlatform, createCrumblingPlatform, createHazardSpikes, createConveyor } from '../objects/Platform.js';
+import { generateStarField, generateNebula, generateDataConduit } from '../effects/procedural.js';
+import { createAmbientParticles, createPortalParticles, createCollectBurst, createEnemyDeath, createGroundFog } from '../effects/particles.js';
 import { addGlow, addPostBloom } from '../utils/helpers.js';
 
 const PALETTE = PALETTES.ROUTER_NEXUS;
 const WORLD = ZONE_WORLDS.ROUTER_NEXUS;
 
-const PATH_COLORS = PALETTE.paths;
+const GROUND_Y = 1700;
 
-const ROUTING_SECTIONS = [
-  {
-    splitX: 1800,
-    mergeX: 4500,
-    paths: [
-      { y: 270, load: 0.3, label: 'GPU-A', status: 'clear', cached: false },
-      { y: 540, load: 0.7, label: 'GPU-B', status: 'moderate', cached: true },
-      { y: 810, load: 0.95, label: 'GPU-C', status: 'overloaded', cached: false },
-    ],
-  },
-  {
-    splitX: 5700,
-    mergeX: 8400,
-    paths: [
-      { y: 300, load: 0.85, label: 'GPU-D', status: 'congested', cached: false },
-      { y: 600, load: 0.2, label: 'GPU-E', status: 'clear', cached: true },
-      { y: 870, load: 0.5, label: 'GPU-F', status: 'moderate', cached: false },
-    ],
-  },
-  {
-    splitX: 9300,
-    mergeX: 11100,
-    paths: [
-      { y: 375, load: 0.15, label: 'GPU-G', status: 'clear', cached: true },
-      { y: 750, load: 0.6, label: 'GPU-H', status: 'moderate', cached: false },
-    ],
-  },
+const GROUND_SEGMENTS = [
+  { x: 0, w: 2000 },
+  { x: 2400, w: 1800 },
+  { x: 4600, w: 2000 },
+  { x: 7000, w: 1800 },
+  { x: 9200, w: 2000 },
+  { x: 11600, w: 2800 },
 ];
 
-const PREFIX_FRAGMENTS = [
-  'system:', 'You are', 'a helpful', 'assistant', 'that',
+const GPU_STATIONS = [
+  { x: 3500, y: 1400, label: 'GPU STATION A' },
+  { x: 6500, y: 1350, label: 'GPU STATION B' },
+  { x: 9000, y: 1400, label: 'GPU STATION C' },
 ];
 
 export class Zone3_RouterNexus extends Phaser.Scene {
@@ -57,24 +41,42 @@ export class Zone3_RouterNexus extends Phaser.Scene {
 
   create() {
     this.physics.world.setBounds(0, 0, WORLD.width, WORLD.height);
+    this.physics.world.gravity.y = GAME.GRAVITY;
     this._exiting = false;
-    this.currentSection = -1;
-    this.speedMultiplier = 1;
-    this.prefixFragments = [];
     this.score = 0;
 
+    this.grounds = [];
+    this.platforms = [];
+    this.movingPlatforms = [];
+    this.crumblingPlatforms = [];
+    this.conveyors = [];
+    this.hazards = [];
+    this.enemies = [];
+    this.crystals = [];
+    this.conduitParticles = [];
+    this.indicatorLights = [];
+
     this.createBackgrounds();
+    this.createDataConduits();
     this.createAmbientEffects();
-    this.createPathSystem();
-    this.createPrefixCollectibles();
+    this.createTerrain();
+    this.createPlatforms();
+    this.createGPUStations();
+    this.createBranchingPaths();
+    this.createEnemies();
     this.createPlayer();
     this.createBoss();
+    this.setupCollisions();
     this.setupCamera();
     this.createHUD();
 
     this.cameras.main.fadeIn(GAME.ZONE_TRANSITION_DURATION, 0, 0, 0);
     addPostBloom(this.cameras.main, 0xffffff, 0.5, 0.5, 1, 1.3, 4);
   }
+
+  /* ------------------------------------------------------------------ */
+  /*  Backgrounds                                                       */
+  /* ------------------------------------------------------------------ */
 
   createBackgrounds() {
     if (!this.textures.exists('z3_stars')) {
@@ -93,8 +95,50 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     ]);
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  Data Conduits (background tubes with flowing particles)           */
+  /* ------------------------------------------------------------------ */
+
+  createDataConduits() {
+    const conduitConfigs = [
+      { x: 400, y: 600, w: 2400, h: 60, color: PALETTE.paths.clear },
+      { x: 3200, y: 400, w: 2600, h: 50, color: PALETTE.paths.cached },
+      { x: 6200, y: 500, w: 3000, h: 55, color: PALETTE.paths.congested },
+      { x: 9800, y: 350, w: 2200, h: 60, color: PALETTE.paths.clear },
+      { x: 1200, y: 900, w: 3400, h: 45, color: PALETTE.paths.cached },
+      { x: 5500, y: 800, w: 2800, h: 50, color: PALETTE.paths.congested },
+      { x: 8500, y: 700, w: 3200, h: 55, color: PALETTE.paths.clear },
+    ];
+
+    conduitConfigs.forEach(cfg => {
+      const conduitKey = `z3_conduit_${cfg.x}_${cfg.y}`;
+      if (!this.textures.exists(conduitKey)) {
+        generateDataConduit(this, conduitKey, cfg.w, cfg.h, cfg.color);
+      }
+
+      const conduit = this.add.image(cfg.x + cfg.w / 2, cfg.y, conduitKey);
+      conduit.setDepth(3).setAlpha(0.5);
+
+      this.add.particles(cfg.x, cfg.y, 'particle_spark', {
+        x: { min: 0, max: cfg.w },
+        y: { min: -cfg.h / 4, max: cfg.h / 4 },
+        speedX: { min: 40, max: 120 },
+        speedY: { min: -5, max: 5 },
+        scale: { start: 0.25, end: 0 },
+        alpha: { start: 0.4, end: 0 },
+        lifespan: { min: 800, max: 1600 },
+        frequency: 120,
+        blendMode: Phaser.BlendModes.ADD,
+        tint: cfg.color,
+      }).setDepth(4);
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Ambient effects                                                   */
+  /* ------------------------------------------------------------------ */
+
   createAmbientEffects() {
-    // Denser gold/orange ambient particles
     this.ambientParticles = createAmbientParticles(this, PALETTE, {
       frequency: 100,
       alphaStart: 0.4,
@@ -102,7 +146,6 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       lifespan: { min: 3000, max: 5000 },
     });
 
-    // Extra layer of warm orange motes
     this.ambientParticles2 = createAmbientParticles(this, PALETTE, {
       frequency: 250,
       alphaStart: 0.2,
@@ -111,462 +154,502 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       speedX: { min: -5, max: 15 },
       speedY: { min: -12, max: -3 },
     });
+
+    this.groundFog = createGroundFog(this, WORLD.width, GROUND_Y, 0x665500);
+
+    this.createIndicatorLights();
   }
 
-  createPathSystem() {
-    this.pathGraphics = this.add.graphics().setDepth(10);
-    this.pathZones = [];
-    this.sectionStates = [];
+  createIndicatorLights() {
+    const lightPositions = [
+      { x: 600, y: 1660 }, { x: 1400, y: 1660 },
+      { x: 2700, y: 1660 }, { x: 3600, y: 1660 },
+      { x: 5000, y: 1660 }, { x: 5800, y: 1660 },
+      { x: 7400, y: 1660 }, { x: 8200, y: 1660 },
+      { x: 9600, y: 1660 }, { x: 10400, y: 1660 },
+      { x: 12000, y: 1660 }, { x: 12800, y: 1660 },
+      { x: 13400, y: 1660 },
+    ];
 
-    ROUTING_SECTIONS.forEach((section, si) => {
-      const state = { decided: false, chosenPath: -1 };
-      this.sectionStates.push(state);
-
-      this.drawPathLines(section, si);
-      this.createPathDecisionUI(section, si);
-      this.createGPUNodes(section, si);
-    });
-  }
-
-  drawPathLines(section, sectionIndex) {
-    const g = this.pathGraphics;
-    const { splitX, mergeX, paths } = section;
-    const splitY = GAME.HEIGHT / 2;
-    const mergeY = GAME.HEIGHT / 2;
-
-    // Main trunk line
-    g.lineStyle(8, 0x222222, 0.8);
-    g.beginPath();
-    g.moveTo(sectionIndex === 0 ? 0 : ROUTING_SECTIONS[sectionIndex - 1].mergeX, splitY);
-    g.lineTo(splitX, splitY);
-    g.strokePath();
-
-    g.lineStyle(4, PALETTE.accent, 0.4);
-    g.beginPath();
-    g.moveTo(sectionIndex === 0 ? 0 : ROUTING_SECTIONS[sectionIndex - 1].mergeX, splitY);
-    g.lineTo(splitX, splitY);
-    g.strokePath();
-
-    // Trunk line particle trail
-    const trunkStartX = sectionIndex === 0 ? 0 : ROUTING_SECTIONS[sectionIndex - 1].mergeX;
-    const trunkLen = splitX - trunkStartX;
-    if (trunkLen > 0) {
-      this.add.particles(trunkStartX, splitY, 'particle_spark', {
-        x: { min: 0, max: trunkLen },
-        y: { min: -3, max: 3 },
-        speedX: { min: 30, max: 80 },
-        scale: { start: 0.25, end: 0 },
-        alpha: { start: 0.35, end: 0 },
-        lifespan: { min: 600, max: 1200 },
-        frequency: 200,
-        blendMode: Phaser.BlendModes.ADD,
-        tint: 0xffd700,
-      }).setDepth(11);
-    }
-
-    paths.forEach(path => {
-      let pathColor;
-      if (path.cached) pathColor = PATH_COLORS.cached;
-      else if (path.status === 'clear') pathColor = PATH_COLORS.clear;
-      else pathColor = PATH_COLORS.congested;
-
-      g.lineStyle(8, 0x222222, 0.8);
-      g.beginPath();
-      g.moveTo(splitX, splitY);
-      g.lineTo(splitX + 300, path.y);
-      g.lineTo(mergeX - 300, path.y);
-      g.lineTo(mergeX, mergeY);
-      g.strokePath();
-
-      g.lineStyle(4, pathColor, 0.5);
-      g.beginPath();
-      g.moveTo(splitX, splitY);
-      g.lineTo(splitX + 300, path.y);
-      g.lineTo(mergeX - 300, path.y);
-      g.lineTo(mergeX, mergeY);
-      g.strokePath();
-
-      // Denser path particle flow
-      this.createPathParticles(splitX + 300, path.y, mergeX - splitX - 600, pathColor);
-    });
-  }
-
-  createPathParticles(x, y, width, color) {
-    // Primary flow particles -- denser than before
-    this.add.particles(x, y, 'particle_spark', {
-      x: { min: 0, max: width },
-      y: { min: -4, max: 4 },
-      speedX: { min: 30, max: 80 },
-      scale: { start: 0.35, end: 0 },
-      alpha: { start: 0.5, end: 0 },
-      lifespan: { min: 800, max: 1500 },
-      frequency: 150,
-      blendMode: Phaser.BlendModes.ADD,
-      tint: color,
-    }).setDepth(11);
-
-    // Secondary soft glow trail layer
-    this.add.particles(x, y, 'particle_soft', {
-      x: { min: 0, max: width },
-      y: { min: -6, max: 6 },
-      speedX: { min: 15, max: 40 },
-      scale: { start: 0.2, end: 0 },
-      alpha: { start: 0.25, end: 0 },
-      lifespan: { min: 1000, max: 2000 },
-      frequency: 300,
-      blendMode: Phaser.BlendModes.ADD,
-      tint: color,
-    }).setDepth(10);
-  }
-
-  createPathDecisionUI(section, sectionIndex) {
-    const { splitX, paths } = section;
-
-    const decisionLabel = this.add.text(splitX, 60, 'CHOOSE ROUTE', {
-      fontFamily: '"Courier New", monospace',
-      fontSize: '22px',
-      fontStyle: 'bold',
-      color: '#ffd700',
-      resolution: 2,
-    });
-    decisionLabel.setOrigin(0.5).setDepth(100);
-    addGlow(decisionLabel, 0xffd700, 3, 0, false, 0.1, 12);
-
-    paths.forEach((path, pi) => {
-      const triggerX = splitX + 225;
-      const triggerWidth = 150;
-      const triggerHeight = 120;
-
-      const zone = this.add.zone(triggerX, path.y, triggerWidth, triggerHeight);
-      this.physics.add.existing(zone, true);
-      zone._sectionIndex = sectionIndex;
-      zone._pathIndex = pi;
-      this.pathZones.push(zone);
-    });
-  }
-
-  createGPUNodes(section, sectionIndex) {
-    const { splitX, mergeX, paths } = section;
-    const midX = (splitX + mergeX) / 2;
-
-    paths.forEach((path, pi) => {
-      const nodeX = midX;
-      const nodeY = path.y;
-
-      let nodeColor;
-      if (path.load < 0.4) nodeColor = PATH_COLORS.clear;
-      else if (path.load < 0.8) nodeColor = 0xffaa00;
-      else nodeColor = PATH_COLORS.congested;
-
-      // Outer decorative ring
-      const outerRing = this.add.graphics().setDepth(19);
-      outerRing.lineStyle(1, nodeColor, 0.3);
-      outerRing.strokeCircle(nodeX, nodeY, 70);
-
-      // Main node ring
-      const nodeGfx = this.add.graphics().setDepth(20);
-      nodeGfx.lineStyle(2, nodeColor, 0.8);
-      nodeGfx.strokeCircle(nodeX, nodeY, 45);
-      nodeGfx.lineStyle(1, nodeColor, 0.4);
-      nodeGfx.strokeCircle(nodeX, nodeY, 60);
-
-      // Pulsing ring sprite for animation
-      const pulseRing = this.add.image(nodeX, nodeY, 'portal_ring');
-      pulseRing.setScale(0.6);
-      pulseRing.setTint(nodeColor);
-      pulseRing.setAlpha(0.15);
-      pulseRing.setBlendMode(Phaser.BlendModes.ADD);
-      pulseRing.setDepth(18);
+    lightPositions.forEach((pos, i) => {
+      const colors = [0xffd700, 0x00ff88, 0xff4444];
+      const color = colors[i % 3];
+      const light = this.add.circle(pos.x, pos.y, 5, color, 0.8);
+      light.setDepth(42).setBlendMode(Phaser.BlendModes.ADD);
 
       this.tweens.add({
-        targets: pulseRing,
-        scale: 0.9,
-        alpha: 0.05,
-        duration: 1800 + pi * 200,
+        targets: light,
+        alpha: { from: 0.2, to: 0.9 },
+        duration: 600 + Math.random() * 800,
         ease: 'Sine.easeInOut',
         yoyo: true,
         repeat: -1,
+        delay: Math.random() * 1500,
       });
 
-      // Slow rotation on the ring
-      this.tweens.add({
-        targets: pulseRing,
-        angle: 360,
-        duration: 8000 + pi * 1000,
-        repeat: -1,
-      });
-
-      const nodeLabel = this.add.text(nodeX, nodeY - 70, path.label, {
-        fontFamily: '"Courier New", monospace',
-        fontSize: '18px',
-        fontStyle: 'bold',
-        color: '#ffd700',
-        resolution: 2,
-      });
-      nodeLabel.setOrigin(0.5).setDepth(21);
-
-      this.createLoadBar(nodeX - 37, nodeY + 22, 75, 12, path.load, nodeColor);
-
-      if (path.cached) {
-        const cachedLabel = this.add.text(nodeX, nodeY + 42, 'CACHED', {
-          fontFamily: '"Courier New", monospace',
-          fontSize: '14px',
-          fontStyle: 'bold',
-          color: '#ffd700',
-          resolution: 2,
-        });
-        cachedLabel.setOrigin(0.5).setDepth(21);
-        addGlow(cachedLabel, 0xffd700, 2, 0, false, 0.1, 8);
-
-        this.add.particles(nodeX, nodeY, 'particle_spark', {
-          speed: { min: 10, max: 30 },
-          scale: { start: 0.2, end: 0 },
-          alpha: { start: 0.5, end: 0 },
-          lifespan: 1000,
-          frequency: 300,
-          blendMode: Phaser.BlendModes.ADD,
-          tint: 0xffd700,
-        }).setDepth(19);
-      }
-
-      const statusText = path.load >= 0.9 ? 'OVERLOADED' :
-        path.load >= 0.7 ? 'BUSY' :
-        path.load >= 0.4 ? 'MODERATE' : 'AVAILABLE';
-      const statusColor = path.load >= 0.9 ? '#ff4444' :
-        path.load >= 0.7 ? '#ffaa44' :
-        path.load >= 0.4 ? '#ffff44' : '#44ff88';
-
-      const statusLabel = this.add.text(nodeX, nodeY - 3, statusText, {
-        fontFamily: '"Courier New", monospace',
-        fontSize: '14px',
-        color: statusColor,
-        resolution: 2,
-      });
-      statusLabel.setOrigin(0.5).setDepth(21);
+      this.indicatorLights.push(light);
     });
   }
 
-  createLoadBar(x, y, width, height, load, color) {
-    const bg = this.add.rectangle(x + width / 2, y + height / 2, width, height, 0x222222);
-    bg.setDepth(22);
+  /* ------------------------------------------------------------------ */
+  /*  Terrain (ground segments)                                         */
+  /* ------------------------------------------------------------------ */
 
-    const fill = this.add.rectangle(x + 1, y + 1, (width - 2) * load, height - 2, color);
-    fill.setOrigin(0, 0).setDepth(23);
+  createTerrain() {
+    GROUND_SEGMENTS.forEach(seg => {
+      const ground = createGround(this, seg.x, GROUND_Y, seg.w, PALETTE.accent, 60);
+      this.grounds.push(ground);
+    });
   }
 
-  createPrefixCollectibles() {
-    this.prefixGroup = this.physics.add.group();
+  /* ------------------------------------------------------------------ */
+  /*  Platforms (22 total)                                               */
+  /* ------------------------------------------------------------------ */
 
-    const positions = [
-      { x: 900, y: 450 },
-      { x: 3750, y: 300 },
-      { x: 5250, y: 750 },
-      { x: 7800, y: 225 },
-      { x: 10200, y: 600 },
-    ];
+  createPlatforms() {
+    // Section 1: Intro area (x=0-2000)
+    this.platforms.push(createPlatform(this, 400, 1450, 200, PALETTE.accent));
+    this.platforms.push(createPlatform(this, 900, 1300, 180, PALETTE.accent));
+    this.platforms.push(createPlatform(this, 1500, 1150, 200, PALETTE.accent));
 
-    positions.forEach((pos, i) => {
-      const fragment = this.physics.add.sprite(pos.x, pos.y, 'crystal');
-      fragment.setScale(0.8);
-      fragment.setTint(0xffd700);
-      fragment.setBlendMode(Phaser.BlendModes.ADD);
-      fragment.setDepth(75);
-      addGlow(fragment, 0xffd700, 3, 0, false, 0.1, 12);
-      fragment._word = PREFIX_FRAGMENTS[i];
+    // Gap 1 bridge (x=2000-2400): moving platform
+    this.movingPlatforms.push(createMovingPlatform(this, 2200, 1500, 180, {
+      color: PALETTE.accent,
+      moveType: 'horizontal',
+      range: 150,
+      speed: 0.8,
+    }));
 
-      const label = this.add.text(pos.x, pos.y - 28, PREFIX_FRAGMENTS[i], {
+    // Section 2 (x=2400-4200)
+    this.platforms.push(createPlatform(this, 2800, 1400, 200, PALETTE.accent));
+    this.conveyors.push(createConveyor(this, 3200, 1500, 250, 120, PALETTE.paths.clear));
+
+    // Crumbling tension
+    this.crumblingPlatforms.push(createCrumblingPlatform(this, 3800, 1350, 160, 0xffaa44));
+
+    // Section 3 (x=4600-6600)
+    this.platforms.push(createPlatform(this, 4900, 1450, 220, PALETTE.accent));
+    this.platforms.push(createPlatform(this, 5400, 1300, 180, PALETTE.accent));
+    this.conveyors.push(createConveyor(this, 5900, 1450, 280, -100, PALETTE.paths.congested));
+
+    // Gap 2 bridge (x=6600-7000): moving platform
+    this.movingPlatforms.push(createMovingPlatform(this, 6800, 1400, 180, {
+      color: PALETTE.accent,
+      moveType: 'vertical',
+      range: 150,
+      speed: 0.7,
+    }));
+
+    // Section 4 (x=7000-8800)
+    this.platforms.push(createPlatform(this, 7400, 1350, 200, PALETTE.accent));
+    this.crumblingPlatforms.push(createCrumblingPlatform(this, 7900, 1250, 150, 0xffaa44));
+    this.platforms.push(createPlatform(this, 8400, 1400, 220, PALETTE.accent));
+
+    // Gap 3 bridge (x=8800-9200): moving platform
+    this.movingPlatforms.push(createMovingPlatform(this, 9000, 1500, 200, {
+      color: PALETTE.accent,
+      moveType: 'horizontal',
+      range: 180,
+      speed: 1.0,
+    }));
+
+    // Section 5 (x=9200-11200)
+    this.platforms.push(createPlatform(this, 9500, 1350, 200, PALETTE.accent));
+    this.conveyors.push(createConveyor(this, 10000, 1450, 300, 150, PALETTE.paths.cached));
+    this.crumblingPlatforms.push(createCrumblingPlatform(this, 10600, 1300, 150, 0xffaa44));
+    this.platforms.push(createPlatform(this, 11100, 1400, 200, PALETTE.accent));
+
+    // Boss arena platforms (x=11600-14400)
+    this.platforms.push(createSolidPlatform(this, 12200, 1400, 300, PALETTE.accent, 24));
+    this.platforms.push(createSolidPlatform(this, 13200, 1350, 250, PALETTE.accent, 24));
+    this.platforms.push(createSolidPlatform(this, 13800, 1450, 200, PALETTE.accent, 24));
+
+    // Hazard spikes at dangerous locations
+    this.hazards.push(createHazardSpikes(this, 2100, GROUND_Y - 5, 200, 0xff2222));
+    this.hazards.push(createHazardSpikes(this, 6650, GROUND_Y - 5, 200, 0xff2222));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  GPU Station Safe Zones                                            */
+  /* ------------------------------------------------------------------ */
+
+  createGPUStations() {
+    GPU_STATIONS.forEach(station => {
+      // Safe platform
+      const plat = createSolidPlatform(this, station.x, station.y, 260, 0x00ff88, 24);
+      this.platforms.push(plat);
+
+      // Station label
+      const label = this.add.text(station.x, station.y - 40, station.label, {
         fontFamily: '"Courier New", monospace',
-        fontSize: '18px',
+        fontSize: '16px',
+        fontStyle: 'bold',
+        color: '#00ff88',
+        resolution: 2,
+      });
+      label.setOrigin(0.5).setDepth(60);
+      addGlow(label, 0x00ff88, 2, 0, false, 0.1, 10);
+
+      // Healing crystal collectible near each station
+      const crystal = this.physics.add.sprite(station.x, station.y - 80, 'crystal');
+      crystal.setScale(0.8);
+      crystal.setTint(0xffd700);
+      crystal.setBlendMode(Phaser.BlendModes.ADD);
+      crystal.setDepth(75);
+      crystal.body.setAllowGravity(false);
+      crystal.body.setImmovable(true);
+      addGlow(crystal, 0xffd700, 3, 0, false, 0.1, 12);
+
+      const crystalLabel = this.add.text(station.x, station.y - 110, 'HEAL +1', {
+        fontFamily: '"Courier New", monospace',
+        fontSize: '14px',
         fontStyle: 'bold',
         color: '#ffd700',
         resolution: 2,
       });
-      label.setOrigin(0.5).setDepth(76);
-      fragment._label = label;
+      crystalLabel.setOrigin(0.5).setDepth(76);
+      crystal._label = crystalLabel;
 
       this.tweens.add({
-        targets: [fragment, label],
-        y: pos.y - 8,
+        targets: [crystal, crystalLabel],
+        y: '-=10',
         duration: 1200 + Math.random() * 400,
         ease: 'Sine.easeInOut',
         yoyo: true,
         repeat: -1,
       });
 
-      this.prefixGroup.add(fragment);
+      this.crystals.push(crystal);
     });
   }
 
-  createPlayer() {
-    this.player = new Player(this, 100, GAME.HEIGHT / 2);
-    this.player.setZonePalette(PALETTE);
+  /* ------------------------------------------------------------------ */
+  /*  Branching Path Sections (2 areas)                                 */
+  /* ------------------------------------------------------------------ */
 
-    this.physics.add.overlap(this.player, this.prefixGroup, this.collectPrefix, null, this);
+  createBranchingPaths() {
+    // Branch 1: around x=4000-4600 (gap between segment 2 and 3)
+    this.createBranch1();
 
-    for (const zone of this.pathZones) {
-      this.physics.add.overlap(this.player, zone, () => {
-        this.choosePath(zone._sectionIndex, zone._pathIndex);
-      }, null, this);
-    }
+    // Branch 2: around x=8000-8800 (within segment 4 area)
+    this.createBranch2();
   }
 
-  collectPrefix(player, fragment) {
-    createCollectBurst(this, fragment.x, fragment.y, 0xffd700);
-    this.cameras.main.shake(60, 0.003);
-    this.prefixFragments.push(fragment._word);
+  createBranch1() {
+    const branchX = 4100;
 
-    if (fragment._label) fragment._label.destroy();
-    fragment.destroy();
-
-    this.updatePrefixHUD();
-  }
-
-  choosePath(sectionIndex, pathIndex) {
-    const state = this.sectionStates[sectionIndex];
-    if (state.decided) return;
-
-    const section = ROUTING_SECTIONS[sectionIndex];
-    const path = section.paths[pathIndex];
-
-    state.decided = true;
-    state.chosenPath = pathIndex;
-
-    if (path.load >= 0.9) {
-      this.handleOverloaded(sectionIndex, pathIndex);
-      return;
-    }
-
-    if (path.cached) {
-      this.speedMultiplier = 1.5;
-      this.score += 100;
-      this.showRoutingFeedback('CACHE HIT! Speed Boost!', '#ffd700', this.player.x, this.player.y - 50);
-      this.player.trail.setParticleTint(0xffd700);
-      this.applySpeedVisualFeedback(0xffd700, 0.08);
-    } else if (path.status === 'clear') {
-      this.speedMultiplier = 1;
-      this.score += 50;
-      this.showRoutingFeedback('Good Route!', '#44ff88', this.player.x, this.player.y - 50);
-      this.applySpeedVisualFeedback(0x44ff88, 0.04);
-    } else if (path.status === 'congested' || path.status === 'moderate') {
-      this.speedMultiplier = 0.5;
-      this.score += 10;
-      this.showRoutingFeedback('Congested... Slow Route', '#ff4444', this.player.x, this.player.y - 50);
-      this.player.trail.setParticleTint(0xff4444);
-      this.applySpeedVisualFeedback(0xff4444, 0.06);
-    }
-
-    this.time.delayedCall(3000, () => {
-      this.speedMultiplier = 1;
-      this.player.trail.setParticleTint(PALETTE.player);
-      this.clearSpeedVisualFeedback();
-    });
-  }
-
-  /** Flash a screen tint overlay and spawn colored particles around the player for speed changes */
-  applySpeedVisualFeedback(color, tintAlpha) {
-    // Screen tint overlay
-    if (this._speedTintRect) this._speedTintRect.destroy();
-    this._speedTintRect = this.add.rectangle(
-      GAME.WIDTH / 2, GAME.HEIGHT / 2, GAME.WIDTH, GAME.HEIGHT, color, tintAlpha
-    ).setScrollFactor(0).setDepth(195);
-
-    // Flash it in
-    this._speedTintRect.setAlpha(0);
-    this.tweens.add({
-      targets: this._speedTintRect,
-      alpha: 1,
-      duration: 200,
-      ease: 'Sine.easeIn',
-    });
-
-    // Burst of colored particles around player
-    const burst = this.add.particles(this.player.x, this.player.y, 'particle_spark', {
-      speed: { min: 40, max: 120 },
-      scale: { start: 0.4, end: 0 },
-      alpha: { start: 0.7, end: 0 },
-      lifespan: 600,
-      blendMode: Phaser.BlendModes.ADD,
-      tint: color,
-      quantity: 16,
-      emitting: false,
-    }).setDepth(110);
-    burst.explode(16, this.player.x, this.player.y);
-    this.time.delayedCall(700, () => burst.destroy());
-  }
-
-  clearSpeedVisualFeedback() {
-    if (this._speedTintRect) {
-      this.tweens.add({
-        targets: this._speedTintRect,
-        alpha: 0,
-        duration: 400,
-        onComplete: () => {
-          if (this._speedTintRect) {
-            this._speedTintRect.destroy();
-            this._speedTintRect = null;
-          }
-        },
-      });
-    }
-  }
-
-  handleOverloaded(sectionIndex, pathIndex) {
-    // Big flashing 503 text with shake
-    const bigText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 60, '503 SERVICE UNAVAILABLE', {
+    // Sign
+    const signText = this.add.text(branchX - 50, 1100, 'CHOOSE ROUTE', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '48px',
+      fontSize: '18px',
       fontStyle: 'bold',
+      color: '#ffd700',
+      resolution: 2,
+    });
+    signText.setOrigin(0.5).setDepth(60);
+    addGlow(signText, 0xffd700, 2, 0, false, 0.1, 10);
+
+    // Upper route: harder platforming, healing reward
+    const upperLabel = this.add.text(branchX + 100, 1000, 'UPPER: CACHE-HIT PATH', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '12px',
+      color: '#ffd700',
+      resolution: 2,
+    });
+    upperLabel.setOrigin(0.5).setDepth(60);
+
+    this.crumblingPlatforms.push(createCrumblingPlatform(this, branchX, 1100, 120, 0xffd700));
+    this.platforms.push(createPlatform(this, branchX + 200, 1000, 120, 0xffd700));
+    this.crumblingPlatforms.push(createCrumblingPlatform(this, branchX + 400, 950, 120, 0xffd700));
+
+    // Bonus crystal on upper route
+    const bonusCrystal = this.physics.add.sprite(branchX + 300, 930, 'crystal');
+    bonusCrystal.setScale(0.7);
+    bonusCrystal.setTint(0xffd700);
+    bonusCrystal.setBlendMode(Phaser.BlendModes.ADD);
+    bonusCrystal.setDepth(75);
+    bonusCrystal.body.setAllowGravity(false);
+    bonusCrystal.body.setImmovable(true);
+    addGlow(bonusCrystal, 0xffd700, 3, 0, false, 0.1, 12);
+
+    const bonusLabel = this.add.text(branchX + 300, 900, 'BONUS', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '12px',
+      fontStyle: 'bold',
+      color: '#ffd700',
+      resolution: 2,
+    });
+    bonusLabel.setOrigin(0.5).setDepth(76);
+    bonusCrystal._label = bonusLabel;
+
+    this.tweens.add({
+      targets: [bonusCrystal, bonusLabel],
+      y: '-=8',
+      duration: 1100,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
+    });
+
+    this.crystals.push(bonusCrystal);
+
+    // Lower route: easier but more enemies
+    const lowerLabel = this.add.text(branchX + 100, 1350, 'LOWER: CONGESTED PATH', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '12px',
       color: '#ff4444',
       resolution: 2,
     });
-    bigText.setOrigin(0.5).setDepth(310).setScrollFactor(0);
-    addGlow(bigText, 0xff0000, 8, 0, false, 0.1, 24);
+    lowerLabel.setOrigin(0.5).setDepth(60);
 
-    this.cameras.main.shake(350, 0.018);
+    this.platforms.push(createPlatform(this, branchX, 1350, 200, 0xff4444));
+    this.platforms.push(createPlatform(this, branchX + 300, 1400, 200, 0xff4444));
 
-    // Red screen flash
-    const flashRect = this.add.rectangle(
-      GAME.WIDTH / 2, GAME.HEIGHT / 2, GAME.WIDTH, GAME.HEIGHT, 0xff0000, 0.15
-    ).setScrollFactor(0).setDepth(305);
+    // Enemies on lower path
+    this.enemies.push(createLoadSpike(this, branchX + 100, 1310));
+    this.enemies.push(createStalePacket(this, branchX + 350, 1360));
+  }
+
+  createBranch2() {
+    const branchX = 8000;
+
+    const signText = this.add.text(branchX - 50, 1100, 'CHOOSE ROUTE', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '18px',
+      fontStyle: 'bold',
+      color: '#ffd700',
+      resolution: 2,
+    });
+    signText.setOrigin(0.5).setDepth(60);
+    addGlow(signText, 0xffd700, 2, 0, false, 0.1, 10);
+
+    // Upper route: tight platforming
+    const upperLabel = this.add.text(branchX + 100, 950, 'UPPER: OPTIMIZED PATH', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '12px',
+      color: '#00ff88',
+      resolution: 2,
+    });
+    upperLabel.setOrigin(0.5).setDepth(60);
+
+    this.movingPlatforms.push(createMovingPlatform(this, branchX, 1050, 120, {
+      color: 0x00ff88,
+      moveType: 'vertical',
+      range: 80,
+      speed: 0.9,
+    }));
+    this.crumblingPlatforms.push(createCrumblingPlatform(this, branchX + 250, 1000, 120, 0x00ff88));
+    this.platforms.push(createPlatform(this, branchX + 500, 1050, 140, 0x00ff88));
+
+    // Score bonus on upper route
+    const bonusCrystal2 = this.physics.add.sprite(branchX + 350, 930, 'crystal');
+    bonusCrystal2.setScale(0.7);
+    bonusCrystal2.setTint(0x00ff88);
+    bonusCrystal2.setBlendMode(Phaser.BlendModes.ADD);
+    bonusCrystal2.setDepth(75);
+    bonusCrystal2.body.setAllowGravity(false);
+    bonusCrystal2.body.setImmovable(true);
+    addGlow(bonusCrystal2, 0x00ff88, 3, 0, false, 0.1, 12);
+
+    const bonusLabel2 = this.add.text(branchX + 350, 900, '+200 PTS', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '12px',
+      fontStyle: 'bold',
+      color: '#00ff88',
+      resolution: 2,
+    });
+    bonusLabel2.setOrigin(0.5).setDepth(76);
+    bonusCrystal2._label = bonusLabel2;
+    bonusCrystal2._scoreBonus = 200;
 
     this.tweens.add({
-      targets: [bigText, flashRect],
-      alpha: 0,
-      duration: 1200,
-      delay: 600,
-      onComplete: () => {
-        bigText.destroy();
-        flashRect.destroy();
-      },
+      targets: [bonusCrystal2, bonusLabel2],
+      y: '-=8',
+      duration: 1100,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
     });
 
-    this.player.body.setVelocity(-300, 0);
+    this.crystals.push(bonusCrystal2);
 
-    this.time.delayedCall(500, () => {
-      this.sectionStates[sectionIndex].decided = false;
+    // Lower route: easier, more enemies
+    const lowerLabel = this.add.text(branchX + 100, 1400, 'LOWER: HEAVY TRAFFIC', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '12px',
+      color: '#ff4444',
+      resolution: 2,
+    });
+    lowerLabel.setOrigin(0.5).setDepth(60);
+
+    this.conveyors.push(createConveyor(this, branchX, 1450, 280, -80, 0xff4444));
+    this.platforms.push(createPlatform(this, branchX + 400, 1500, 200, 0xff4444));
+
+    this.enemies.push(createStalePacket(this, branchX + 150, 1410));
+    this.enemies.push(createLoadSpike(this, branchX + 450, 1460));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Enemies (20 mobs)                                                 */
+  /* ------------------------------------------------------------------ */
+
+  createEnemies() {
+    // Stale Packets on ground (8 total, plus 2 from branching = 10)
+    const stalePositions = [
+      { x: 600, y: GROUND_Y - 40 },
+      { x: 1600, y: GROUND_Y - 40 },
+      { x: 2900, y: GROUND_Y - 40 },
+      { x: 5100, y: GROUND_Y - 40 },
+      { x: 5700, y: GROUND_Y - 40 },
+      { x: 7600, y: GROUND_Y - 40 },
+      { x: 9600, y: GROUND_Y - 40 },
+      { x: 10300, y: GROUND_Y - 40 },
+    ];
+
+    stalePositions.forEach(pos => {
+      this.enemies.push(createStalePacket(this, pos.x, pos.y));
+    });
+
+    // Load Spikes on platforms (8 total, plus 2 from branching = 10)
+    const spikePositions = [
+      { x: 900, y: 1260 },
+      { x: 2800, y: 1360 },
+      { x: 4900, y: 1410 },
+      { x: 5400, y: 1260 },
+      { x: 7400, y: 1310 },
+      { x: 9500, y: 1310 },
+      { x: 10600, y: 1260 },
+      { x: 11100, y: 1360 },
+    ];
+
+    spikePositions.forEach(pos => {
+      this.enemies.push(createLoadSpike(this, pos.x, pos.y));
     });
   }
 
-  showRoutingFeedback(text, color, x, y) {
-    const feedback = this.add.text(x, y, text, {
+  /* ------------------------------------------------------------------ */
+  /*  Player                                                            */
+  /* ------------------------------------------------------------------ */
+
+  createPlayer() {
+    this.player = new Player(this, 150, GROUND_Y - 60);
+    this.player.setZonePalette(PALETTE);
+
+    // Enemy projectiles group
+    this._enemyProjectiles = this.physics.add.group();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Collision Setup                                                   */
+  /* ------------------------------------------------------------------ */
+
+  setupCollisions() {
+    // Player vs grounds
+    this.grounds.forEach(g => {
+      this.physics.add.collider(this.player, g);
+    });
+
+    // Player vs platforms (static, solid, crumbling, conveyors)
+    this.platforms.forEach(p => {
+      this.physics.add.collider(this.player, p);
+    });
+
+    this.movingPlatforms.forEach(mp => {
+      this.physics.add.collider(this.player, mp);
+    });
+
+    this.crumblingPlatforms.forEach(cp => {
+      this.physics.add.collider(this.player, cp, () => {
+        cp.startCrumble();
+      });
+    });
+
+    this.conveyors.forEach(cv => {
+      this.physics.add.collider(this.player, cv);
+    });
+
+    // Enemies vs grounds
+    this.enemies.forEach(e => {
+      this.grounds.forEach(g => {
+        this.physics.add.collider(e, g);
+      });
+      // Also collide with platforms
+      this.platforms.forEach(p => {
+        this.physics.add.collider(e, p);
+      });
+    });
+
+    // Player vs enemies (damage)
+    this.enemies.forEach(e => {
+      this.physics.add.overlap(this.player, e, () => {
+        if (!this.player._invulnerable && !this.player.isDashing) {
+          const kbx = this.player.x < e.x ? -300 : 300;
+          this.player.takeDamage(kbx, -250);
+        }
+      });
+    });
+
+    // Player vs hazard spikes
+    this.hazards.forEach(h => {
+      this.physics.add.overlap(this.player, h, () => {
+        if (!this.player._invulnerable) {
+          this.player.takeDamage(0, -400);
+        }
+      });
+    });
+
+    // Player vs crystals
+    this.crystals.forEach(crystal => {
+      this.physics.add.overlap(this.player, crystal, () => {
+        this.collectCrystal(crystal);
+      });
+    });
+
+    // Player vs enemy projectiles
+    this.physics.add.overlap(this.player, this._enemyProjectiles, (player, proj) => {
+      if (!this.player._invulnerable) {
+        const kbx = this.player.x < proj.x ? -200 : 200;
+        this.player.takeDamage(kbx, -200);
+        proj.destroy();
+      }
+    });
+  }
+
+  collectCrystal(crystal) {
+    if (!crystal.active) return;
+
+    createCollectBurst(this, crystal.x, crystal.y, 0xffd700);
+    this.cameras.main.shake(60, 0.003);
+
+    if (crystal._scoreBonus) {
+      this.score += crystal._scoreBonus;
+      this.showFloatingText(crystal.x, crystal.y - 30, `+${crystal._scoreBonus}`, '#00ff88');
+    } else {
+      this.player.heal(1);
+      this.showFloatingText(crystal.x, crystal.y - 30, '+1 HP', '#ffd700');
+    }
+
+    if (crystal._label) crystal._label.destroy();
+    crystal.destroy();
+  }
+
+  showFloatingText(x, y, text, color) {
+    const txt = this.add.text(x, y, text, {
       fontFamily: '"Courier New", monospace',
-      fontSize: '22px',
+      fontSize: '20px',
       fontStyle: 'bold',
       color: color,
       resolution: 2,
     });
-    feedback.setOrigin(0.5).setDepth(300);
-    addGlow(feedback,
-      Phaser.Display.Color.HexStringToColor(color).color,
-      3, 0, false, 0.1, 12
-    );
+    txt.setOrigin(0.5).setDepth(300);
+    addGlow(txt, Phaser.Display.Color.HexStringToColor(color).color, 3, 0, false, 0.1, 12);
 
     this.tweens.add({
-      targets: feedback,
-      y: y - 40,
+      targets: txt,
+      y: y - 50,
       alpha: 0,
-      duration: 1500,
-      onComplete: () => feedback.destroy(),
+      duration: 1200,
+      onComplete: () => txt.destroy(),
     });
   }
 
@@ -576,24 +659,26 @@ export class Zone3_RouterNexus extends Phaser.Scene {
 
   createBoss() {
     this.bossDefeated = false;
+    this.bossActive = false;
+    this.bossPhase2 = false;
+    this.bossVulnerable = false;
+    this.bossPhaseTime = 0;
+    this.bossTrafficBlocks = [];
+    this.bossBarrierWalls = [];
+    this.bossProjectiles = this.add.group();
 
-    // Arena sits between x=11200 and the world edge at 12000
-    this.bossArenaX = 11200;
-    this.bossArenaWidth = WORLD.width - this.bossArenaX; // 800
-    // Expand arena to a full screen width so the camera has room
-    this.bossArenaWidth = GAME.WIDTH;
-    // Center the arena: boss arena starts such that the center is at 11600
-    this.bossArenaCenterX = 11600;
-    this.bossArenaCenterY = GAME.HEIGHT / 2;
-    this.bossArenaX = this.bossArenaCenterX - GAME.WIDTH / 2; // 10640
+    this.bossArenaCenterX = 12900;
+    this.bossArenaCenterY = 1200;
+    this.bossArenaX = 11600;
+    this.bossArenaWidth = 2800;
 
-    // Boss rings -- concentric portal_ring textures at different scales/angles
+    // Boss rings: 4 concentric spinning rings
     this.bossRings = [];
     const ringConfigs = [
-      { scale: 3.2, speed: -0.3, color: 0xffd700, alpha: 0.9, depth: 82 },
-      { scale: 2.4, speed: 0.5, color: 0xff8c00, alpha: 0.7, depth: 81 },
-      { scale: 1.6, speed: -0.8, color: 0xffa500, alpha: 0.6, depth: 80 },
-      { scale: 1.0, speed: 1.2, color: 0xffcc44, alpha: 0.5, depth: 79 },
+      { scale: 3.5, speed: -0.3, color: 0xffd700, alpha: 0.9, depth: 82 },
+      { scale: 2.6, speed: 0.5, color: 0xff8c00, alpha: 0.7, depth: 81 },
+      { scale: 1.8, speed: -0.8, color: 0xffa500, alpha: 0.6, depth: 80 },
+      { scale: 1.1, speed: 1.2, color: 0xffcc44, alpha: 0.5, depth: 79 },
     ];
 
     ringConfigs.forEach(cfg => {
@@ -610,7 +695,7 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       this.bossRings.push(ring);
     });
 
-    // Core glow at the center
+    // Core glow
     this.bossCore = this.add.image(this.bossArenaCenterX, this.bossArenaCenterY, 'particle_soft');
     this.bossCore.setScale(2.5);
     this.bossCore.setTint(0xffd700);
@@ -618,22 +703,6 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     this.bossCore.setBlendMode(Phaser.BlendModes.ADD);
     this.bossCore.setDepth(83);
     addGlow(this.bossCore, 0xffd700, 6, 0, false, 0.1, 32);
-
-    // Physics body for the boss (use the core)
-    this.boss = this.physics.add.sprite(this.bossArenaCenterX, this.bossArenaCenterY, 'player_orb');
-    this.boss.setScale(2.5);
-    this.boss.setAlpha(0.001); // invisible; rings are the visual
-    this.boss.setDepth(84);
-    this.boss.body.setImmovable(true);
-    this.boss.body.setAllowGravity(false);
-    this.boss.body.setCircle(this.boss.width * 1.2);
-
-    this.bossHP = 5;
-    this.bossMaxHP = 5;
-    this.bossVulnerable = false;
-    this.bossPhaseTime = 0;
-    this.bossActive = false;
-    this.bossTrafficBlocks = [];
 
     // Pulsing core
     this.tweens.add({
@@ -646,8 +715,20 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       repeat: -1,
     });
 
+    // Physics body for the boss (invisible, use core position)
+    this.boss = this.physics.add.sprite(this.bossArenaCenterX, this.bossArenaCenterY, 'player_orb');
+    this.boss.setScale(2.5);
+    this.boss.setAlpha(0.001);
+    this.boss.setDepth(84);
+    this.boss.body.setImmovable(true);
+    this.boss.body.setAllowGravity(false);
+    this.boss.body.setCircle(this.boss.width * 1.2);
+
+    this.bossHP = 8;
+    this.bossMaxHP = 8;
+
     // Boss arena trigger zone
-    this.bossArenaZone = this.add.zone(this.bossArenaX, 0, 60, GAME.HEIGHT);
+    this.bossArenaZone = this.add.zone(this.bossArenaX + 50, 0, 80, WORLD.height);
     this.bossArenaZone.setOrigin(0, 0);
     this.physics.add.existing(this.bossArenaZone, true);
     this.physics.add.overlap(this.player, this.bossArenaZone, () => this.activateBoss(), null, this);
@@ -655,7 +736,7 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     // Overlap for dashing into boss
     this.physics.add.overlap(this.player, this.boss, () => this.hitBoss(), null, this);
 
-    // Create boss HUD (hidden until active)
+    // Boss HUD (hidden)
     this.bossHUDContainer = this.add.container(GAME.WIDTH / 2, 40).setScrollFactor(0).setDepth(310).setAlpha(0);
 
     const bossTitle = this.add.text(0, 0, 'BOSS: Overload Sentinel', {
@@ -666,22 +747,16 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       resolution: 2,
     }).setOrigin(0.5);
     addGlow(bossTitle, 0xffd700, 3, 0, false, 0.1, 12);
+    this._bossTitleText = bossTitle;
 
-    // HP bar background
-    const hpBarBg = this.add.rectangle(0, 30, 300, 16, 0x333333);
-    hpBarBg.setOrigin(0.5);
-
-    // HP bar frame
+    const hpBarBg = this.add.rectangle(0, 30, 300, 16, 0x333333).setOrigin(0.5);
     const hpBarFrame = this.add.rectangle(0, 30, 302, 18);
     hpBarFrame.setStrokeStyle(1, 0xffd700, 0.6);
     hpBarFrame.setFillStyle(0x000000, 0);
     hpBarFrame.setOrigin(0.5);
 
-    // HP bar fill
-    this.bossHPBar = this.add.rectangle(-150 + 1, 30, 298, 14, 0xffd700);
-    this.bossHPBar.setOrigin(0, 0.5);
+    this.bossHPBar = this.add.rectangle(-150 + 1, 30, 298, 14, 0xffd700).setOrigin(0, 0.5);
 
-    // HP text
     this.bossHPText = this.add.text(0, 30, `${this.bossHP} / ${this.bossMaxHP}`, {
       fontFamily: '"Courier New", monospace',
       fontSize: '12px',
@@ -697,10 +772,10 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     if (this.bossActive || this.bossDefeated) return;
     this.bossActive = true;
 
-    // Lock camera to the boss arena
+    // Lock camera to boss arena
     this.cameras.main.stopFollow();
-    this.cameras.main.setBounds(this.bossArenaX, 0, GAME.WIDTH, GAME.HEIGHT);
-    this.cameras.main.pan(this.bossArenaCenterX, this.bossArenaCenterY, 500, 'Power2');
+    this.cameras.main.setBounds(this.bossArenaX, 0, this.bossArenaWidth, WORLD.height);
+    this.cameras.main.pan(this.bossArenaCenterX, this.bossArenaCenterY - 200, 800, 'Power2');
 
     // Show boss HUD
     this.tweens.add({
@@ -709,37 +784,61 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       duration: 400,
     });
 
-    // Start traffic flood attack cycle -- every 3.5 seconds
+    // Attack cycle: traffic floods
     this.bossAttackTimer = this.time.addEvent({
       delay: 3500,
-      callback: () => this.bossFireTrafficFlood(),
+      callback: () => this.bossAttackCycle(),
       loop: true,
     });
 
-    // Start vulnerability window cycle -- every 5 seconds, boss overheats for 2.5s
+    // Vulnerability window cycle
     this.bossVulnTimer = this.time.addEvent({
-      delay: 5000,
+      delay: 5500,
       callback: () => this.bossOverheat(),
       loop: true,
     });
   }
 
-  /** Boss fires a wave of 6-8 traffic block sprites that sweep across the arena */
+  bossAttackCycle() {
+    if (this.bossDefeated || this.bossVulnerable) return;
+
+    // Rotate through attack patterns
+    if (!this._bossAttackIndex) this._bossAttackIndex = 0;
+
+    if (this.bossPhase2) {
+      // Phase 2: two attacks per cycle
+      this.bossFireTrafficFlood();
+      this.time.delayedCall(800, () => {
+        if (!this.bossDefeated && !this.bossVulnerable) {
+          this.bossFireOmniBurst();
+        }
+      });
+    } else {
+      const attacks = [
+        () => this.bossFireTrafficFlood(),
+        () => this.bossRingShockwave(),
+        () => this.bossBarrierAttack(),
+      ];
+      attacks[this._bossAttackIndex % attacks.length]();
+      this._bossAttackIndex++;
+    }
+  }
+
+  /** Attack 1: Traffic flood waves -- gate_block sprites sweep right to left */
   bossFireTrafficFlood() {
     if (this.bossDefeated || this.bossVulnerable) return;
 
     const count = Phaser.Math.Between(6, 8);
-    const spacing = GAME.HEIGHT / (count + 1);
+    const spacing = 800 / (count + 1);
 
     for (let i = 0; i < count; i++) {
-      const blockY = spacing * (i + 1);
-      // Stagger slightly
-      this.time.delayedCall(i * 60, () => {
+      const blockY = GROUND_Y - 200 - spacing * i;
+      this.time.delayedCall(i * 70, () => {
         if (this.bossDefeated || this.bossVulnerable) return;
 
         const block = this.physics.add.sprite(
-          this.bossArenaCenterX + GAME.WIDTH / 2 + 50,
-          blockY + Phaser.Math.Between(-20, 20),
+          this.bossArenaX + this.bossArenaWidth + 50,
+          blockY + Phaser.Math.Between(-30, 30),
           'gate_block'
         );
         block.setScale(0.6);
@@ -755,10 +854,9 @@ export class Zone3_RouterNexus extends Phaser.Scene {
 
         this.physics.add.overlap(this.player, block, () => {
           this.hitByTraffic(block);
-        }, null, this);
+        });
 
-        // Destroy when off-screen left
-        this.time.delayedCall(5000, () => {
+        this.time.delayedCall(6000, () => {
           if (block.active) {
             block.destroy();
             const idx = this.bossTrafficBlocks.indexOf(block);
@@ -769,47 +867,196 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     }
   }
 
+  /** Attack 2: Ring expansion shockwave -- rings pulse outward as damaging circles */
+  bossRingShockwave() {
+    if (this.bossDefeated || this.bossVulnerable) return;
+
+    // Visual warning: rings flash
+    this.bossRings.forEach(ring => {
+      this.tweens.add({
+        targets: ring,
+        alpha: 1,
+        duration: 150,
+        yoyo: true,
+        repeat: 2,
+      });
+    });
+
+    this.time.delayedCall(600, () => {
+      if (this.bossDefeated || this.bossVulnerable) return;
+
+      // Spawn expanding damage rings
+      for (let i = 0; i < 3; i++) {
+        this.time.delayedCall(i * 400, () => {
+          if (this.bossDefeated || this.bossVulnerable) return;
+
+          const bx = this.boss.x;
+          const by = this.boss.y;
+          const ringGfx = this.add.circle(bx, by, 30, 0x000000, 0);
+          ringGfx.setStrokeStyle(6, 0xff8c00, 0.9);
+          ringGfx.setDepth(77);
+          ringGfx.setBlendMode(Phaser.BlendModes.ADD);
+
+          this.physics.add.existing(ringGfx, false);
+          ringGfx.body.setAllowGravity(false);
+          ringGfx.body.setCircle(30);
+
+          const shockOverlap = this.physics.add.overlap(this.player, ringGfx, () => {
+            if (!this.player._invulnerable) {
+              const pushDir = this.player.x > bx ? 1 : -1;
+              this.player.takeDamage(pushDir * 350, -300);
+              shockOverlap.destroy();
+            }
+          });
+
+          this.tweens.add({
+            targets: ringGfx,
+            scaleX: 8,
+            scaleY: 8,
+            alpha: 0,
+            duration: 1200,
+            ease: 'Power2',
+            onUpdate: () => {
+              if (ringGfx.body) {
+                ringGfx.body.setCircle(30 * ringGfx.scaleX);
+                ringGfx.body.updateFromGameObject();
+              }
+            },
+            onComplete: () => {
+              shockOverlap.destroy();
+              ringGfx.destroy();
+            },
+          });
+        });
+      }
+    });
+  }
+
+  /** Attack 3: Barrier walls -- temporary solid platforms appear blocking movement */
+  bossBarrierAttack() {
+    if (this.bossDefeated || this.bossVulnerable) return;
+
+    const barrierPositions = [
+      { x: this.bossArenaX + 600, y: 1300, w: 30, h: 400 },
+      { x: this.bossArenaX + 1400, y: 1100, w: 30, h: 500 },
+      { x: this.bossArenaX + 2100, y: 1250, w: 30, h: 450 },
+    ];
+
+    barrierPositions.forEach((bp, i) => {
+      this.time.delayedCall(i * 200, () => {
+        if (this.bossDefeated || this.bossVulnerable) return;
+
+        // Warning flash
+        const warning = this.add.rectangle(bp.x, bp.y, bp.w + 20, bp.h + 20, 0xff4444, 0.2);
+        warning.setDepth(74);
+        this.tweens.add({
+          targets: warning,
+          alpha: { from: 0.1, to: 0.4 },
+          duration: 150,
+          yoyo: true,
+          repeat: 2,
+          onComplete: () => {
+            warning.destroy();
+            if (this.bossDefeated || this.bossVulnerable) return;
+
+            const wall = this.add.rectangle(bp.x, bp.y, bp.w, bp.h, 0xff4444, 0.7);
+            wall.setDepth(75);
+            addGlow(wall, 0xff4444, 3, 0, false, 0.1, 10);
+            this.physics.add.existing(wall, true);
+            this.physics.add.collider(this.player, wall);
+            this.bossBarrierWalls.push(wall);
+
+            // Remove after 2.5 seconds
+            this.time.delayedCall(2500, () => {
+              if (wall.active) {
+                this.tweens.add({
+                  targets: wall,
+                  alpha: 0,
+                  duration: 300,
+                  onComplete: () => {
+                    wall.destroy();
+                    const idx = this.bossBarrierWalls.indexOf(wall);
+                    if (idx >= 0) this.bossBarrierWalls.splice(idx, 1);
+                  },
+                });
+              }
+            });
+          },
+        });
+      });
+    });
+  }
+
+  /** Phase 2 attack: Omnidirectional projectile burst */
+  bossFireOmniBurst() {
+    if (this.bossDefeated || this.bossVulnerable) return;
+
+    const count = 12;
+    const bx = this.boss.x;
+    const by = this.boss.y;
+
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      const speed = 250;
+
+      const proj = this.add.circle(bx, by, 8, 0xff8c00);
+      proj.setBlendMode(Phaser.BlendModes.ADD);
+      proj.setDepth(76);
+      addGlow(proj, 0xff8c00, 2, 0, false, 0.1, 6);
+
+      this.physics.add.existing(proj, false);
+      proj.body.setAllowGravity(false);
+      proj.body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+      proj.body.setCircle(8);
+
+      this.physics.add.overlap(this.player, proj, () => {
+        if (!this.player._invulnerable) {
+          const pushDir = this.player.x > bx ? 1 : -1;
+          this.player.takeDamage(pushDir * 250, -200);
+          proj.destroy();
+        }
+      });
+
+      this.bossProjectiles.add(proj);
+
+      this.time.delayedCall(4000, () => {
+        if (proj.active) proj.destroy();
+      });
+    }
+  }
+
   hitByTraffic(block) {
     if (this.player._invulnerable) return;
 
     const pushDir = this.player.x > block.x ? 1 : -1;
-    this.player.body.setVelocity(pushDir * 300, Phaser.Math.Between(-150, 150));
+    this.player.takeDamage(pushDir * 300, -200);
 
-    this.player._invulnerable = true;
-    this.tweens.add({
-      targets: this.player,
-      alpha: 0.3,
-      duration: 100,
-      yoyo: true,
-      repeat: 5,
-      onComplete: () => {
-        this.player.setAlpha(1);
-        this.player._invulnerable = false;
-      },
-    });
-
-    this.cameras.main.shake(120, 0.007);
-
-    // Destroy the block on hit
     block.destroy();
     const idx = this.bossTrafficBlocks.indexOf(block);
     if (idx >= 0) this.bossTrafficBlocks.splice(idx, 1);
   }
 
-  /** Boss overheats: turns gold/green, becomes vulnerable for 2.5 seconds */
+  /** Boss overheats: turns green, vulnerable for 2.5 seconds */
   bossOverheat() {
     if (this.bossDefeated) return;
 
     this.bossVulnerable = true;
 
-    // Turn rings gold/green
-    this.bossRings.forEach(ring => {
-      ring.setTint(0x44ff88);
-    });
+    // Turn rings green
+    this.bossRings.forEach(ring => ring.setTint(0x44ff88));
     this.bossCore.setTint(0x88ffaa);
 
-    // Flash text
-    const hitText = this.add.text(GAME.WIDTH / 2, 100, 'OVERLOADED - STRIKE!', {
+    // Core pulses faster during vulnerability
+    this.tweens.add({
+      targets: this.bossCore,
+      scale: { from: 2.5, to: 3.5 },
+      alpha: { from: 0.6, to: 0.9 },
+      duration: 300,
+      yoyo: true,
+      repeat: 3,
+    });
+
+    const hitText = this.add.text(GAME.WIDTH / 2, 100, 'OVERHEATED - DASH STRIKE!', {
       fontFamily: '"Courier New", monospace',
       fontSize: '28px',
       fontStyle: 'bold',
@@ -818,7 +1065,6 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(320).setScrollFactor(0);
     addGlow(hitText, 0x44ff88, 6, 0, false, 0.1, 20);
 
-    // Pulsing text
     this.tweens.add({
       targets: hitText,
       scale: 1.1,
@@ -830,10 +1076,7 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     this.time.delayedCall(2500, () => {
       this.bossVulnerable = false;
       if (!this.bossDefeated) {
-        // Restore ring colors
-        this.bossRings.forEach(ring => {
-          ring.setTint(ring._baseColor);
-        });
+        this.bossRings.forEach(ring => ring.setTint(ring._baseColor));
         this.bossCore.setTint(0xffd700);
       }
       hitText.destroy();
@@ -842,11 +1085,11 @@ export class Zone3_RouterNexus extends Phaser.Scene {
 
   hitBoss() {
     if (!this.bossVulnerable || this.bossDefeated) return;
-    // Require dashing or fast movement
     if (!this.player.isDashing) return;
 
     this.bossVulnerable = false;
     this.bossHP--;
+    this.score += 100;
 
     // Golden particle burst
     for (let i = 0; i < 3; i++) {
@@ -858,10 +1101,9 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       });
     }
 
-    // Camera shake
     this.cameras.main.shake(250, 0.015);
 
-    // Rings scatter briefly
+    // Rings scatter
     this.bossRings.forEach((ring, i) => {
       const scatterAngle = Phaser.Math.Between(0, 360);
       const scatterDist = 40 + i * 20;
@@ -882,7 +1124,7 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       });
     });
 
-    // Flash rings white briefly
+    // Flash white
     this.bossRings.forEach(ring => ring.setTint(0xffffff));
     this.bossCore.setTint(0xffffff);
     this.time.delayedCall(200, () => {
@@ -902,21 +1144,102 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     });
     this.bossHPText.setText(`${this.bossHP} / ${this.bossMaxHP}`);
 
-    // Change bar color as HP drops
     if (this.bossHP <= 2) {
       this.bossHPBar.setFillStyle(0xff4444);
-    } else if (this.bossHP <= 3) {
+    } else if (this.bossHP <= 4) {
       this.bossHPBar.setFillStyle(0xff8c00);
     }
 
     // Bounce player back
     const pushDir = this.player.x > this.boss.x ? 1 : -1;
-    this.player.body.setVelocity(pushDir * 350, -200);
+    this.player.body.setVelocity(pushDir * 350, -300);
+
+    // Phase 2 at 4 HP
+    if (this.bossHP <= 4 && !this.bossPhase2) {
+      this.enterBossPhase2();
+    }
 
     if (this.bossHP <= 0) {
       this.defeatBoss();
     }
   }
+
+  /* ------------------------------------------------------------------ */
+  /*  Boss Phase 2                                                      */
+  /* ------------------------------------------------------------------ */
+
+  enterBossPhase2() {
+    this.bossPhase2 = true;
+
+    // Spin faster
+    this.bossRings.forEach(ring => {
+      ring._rotSpeed *= 2.5;
+    });
+
+    // Screen flash
+    const flash = this.add.rectangle(
+      GAME.WIDTH / 2, GAME.HEIGHT / 2, GAME.WIDTH, GAME.HEIGHT, 0xff4400, 0.4
+    ).setScrollFactor(0).setDepth(200);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 600,
+      onComplete: () => flash.destroy(),
+    });
+
+    // Phase 2 announcement
+    const phaseText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 200, 'PHASE 2: OVERCLOCKED', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '32px',
+      fontStyle: 'bold',
+      color: '#ff4444',
+      resolution: 2,
+    }).setOrigin(0.5).setDepth(310).setScrollFactor(0);
+    addGlow(phaseText, 0xff4444, 6, 0, false, 0.1, 20);
+
+    this.tweens.add({
+      targets: phaseText,
+      alpha: 0,
+      y: phaseText.y - 40,
+      duration: 2000,
+      delay: 1000,
+      onComplete: () => phaseText.destroy(),
+    });
+
+    // Update boss title
+    if (this._bossTitleText) {
+      this._bossTitleText.setColor('#ff4444');
+    }
+
+    // Speed up attack timer
+    if (this.bossAttackTimer) this.bossAttackTimer.remove();
+    this.bossAttackTimer = this.time.addEvent({
+      delay: 2500,
+      callback: () => this.bossAttackCycle(),
+      loop: true,
+    });
+
+    // Shift arena platforms
+    this.platforms.forEach(p => {
+      if (p.x > this.bossArenaX && p.x < this.bossArenaX + this.bossArenaWidth) {
+        this.tweens.add({
+          targets: p,
+          y: p.y + Phaser.Math.Between(-80, 80),
+          duration: 800,
+          ease: 'Sine.easeInOut',
+          onUpdate: () => {
+            if (p.body) p.body.updateFromGameObject();
+          },
+        });
+      }
+    });
+
+    this.cameras.main.shake(400, 0.018);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Boss Defeat                                                       */
+  /* ------------------------------------------------------------------ */
 
   defeatBoss() {
     this.bossDefeated = true;
@@ -928,6 +1251,9 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     // Destroy remaining traffic blocks
     this.bossTrafficBlocks.forEach(b => { if (b.active) b.destroy(); });
     this.bossTrafficBlocks = [];
+    this.bossBarrierWalls.forEach(b => { if (b.active) b.destroy(); });
+    this.bossBarrierWalls = [];
+    this.bossProjectiles.getChildren().forEach(p => { if (p.active) p.destroy(); });
 
     // Phase 1: Rings spin faster and faster
     this.bossRings.forEach((ring, i) => {
@@ -951,9 +1277,8 @@ export class Zone3_RouterNexus extends Phaser.Scene {
 
     this.cameras.main.shake(1200, 0.015);
 
-    // Phase 2: After spin-up, rings explode outward
+    // Phase 2: rings explode outward
     this.time.delayedCall(1200, () => {
-      // Each ring flies away in a different direction
       this.bossRings.forEach((ring, i) => {
         const angle = (i / this.bossRings.length) * Math.PI * 2;
         const targetX = ring.x + Math.cos(angle) * 1200;
@@ -982,7 +1307,7 @@ export class Zone3_RouterNexus extends Phaser.Scene {
         onComplete: () => this.bossCore.destroy(),
       });
 
-      // Boss physics body fade
+      // Boss physics body
       this.tweens.add({
         targets: this.boss,
         alpha: 0,
@@ -991,10 +1316,10 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       });
 
       // Massive particle bursts
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 10; i++) {
         this.time.delayedCall(i * 80, () => {
-          const bx = this.bossArenaCenterX + Phaser.Math.Between(-80, 80);
-          const by = this.bossArenaCenterY + Phaser.Math.Between(-80, 80);
+          const bx = this.bossArenaCenterX + Phaser.Math.Between(-100, 100);
+          const by = this.bossArenaCenterY + Phaser.Math.Between(-100, 100);
           createCollectBurst(this, bx, by, 0xffd700);
           createCollectBurst(this, bx, by, 0xff8c00);
           createCollectBurst(this, bx, by, 0xffffff);
@@ -1002,6 +1327,20 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       }
 
       this.cameras.main.shake(600, 0.025);
+
+      // White screen flash
+      const whiteFlash = this.add.rectangle(
+        GAME.WIDTH / 2, GAME.HEIGHT / 2, GAME.WIDTH + 200, GAME.HEIGHT + 200,
+        0xffffff, 0.8
+      ).setScrollFactor(0).setDepth(500);
+      this.tweens.add({
+        targets: whiteFlash,
+        alpha: 0,
+        duration: 800,
+        delay: 200,
+        ease: 'Power2',
+        onComplete: () => whiteFlash.destroy(),
+      });
 
       // Victory text
       const victoryText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 80, 'ROUTING OPTIMIZED', {
@@ -1021,7 +1360,6 @@ export class Zone3_RouterNexus extends Phaser.Scene {
         ease: 'Power2',
       });
 
-      // Fade out victory text after a while
       this.tweens.add({
         targets: victoryText,
         alpha: 0,
@@ -1041,26 +1379,39 @@ export class Zone3_RouterNexus extends Phaser.Scene {
 
     // Spawn portal after the spectacle
     this.time.delayedCall(2500, () => {
-      // Restore camera to follow player and full world bounds
-      this.cameras.main.setBounds(0, 0, WORLD.width, GAME.HEIGHT);
+      this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
       this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
       this.spawnPortalAfterBoss();
     });
   }
 
-  spawnPortalAfterBoss() {
-    this.portalX = WORLD.width - 150;
-    this.portalY = GAME.HEIGHT / 2;
+  /* ------------------------------------------------------------------ */
+  /*  Portal / Victory                                                  */
+  /* ------------------------------------------------------------------ */
 
-    const approvedText = this.add.text(this.portalX, this.portalY - 130, 'ROUTING COMPLETE', {
+  spawnPortalAfterBoss() {
+    this.portalX = 14250;
+    this.portalY = GROUND_Y - 80;
+
+    // "INFERENCE COMPLETE" message since this is the final zone
+    const completeText = this.add.text(this.portalX, this.portalY - 160, 'INFERENCE COMPLETE', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '28px',
+      fontSize: '32px',
       fontStyle: 'bold',
       color: '#ffd700',
       resolution: 2,
     });
-    approvedText.setOrigin(0.5).setDepth(90);
-    addGlow(approvedText, 0xffd700, 4, 0, false, 0.1, 16);
+    completeText.setOrigin(0.5).setDepth(90);
+    addGlow(completeText, 0xffd700, 6, 0, false, 0.1, 20);
+
+    this.tweens.add({
+      targets: completeText,
+      alpha: { from: 0.7, to: 1 },
+      scale: { from: 0.98, to: 1.02 },
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+    });
 
     this.portal = this.add.image(this.portalX, this.portalY, 'portal_ring');
     this.portal.setBlendMode(Phaser.BlendModes.ADD);
@@ -1071,9 +1422,9 @@ export class Zone3_RouterNexus extends Phaser.Scene {
 
     // Fade in
     this.portal.setAlpha(0);
-    approvedText.setAlpha(0);
+    completeText.setAlpha(0);
     this.tweens.add({
-      targets: [this.portal, approvedText],
+      targets: [this.portal, completeText],
       alpha: 1,
       duration: 800,
       ease: 'Power2',
@@ -1086,7 +1437,7 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       repeat: -1,
     });
 
-    // Portal particles
+    // Portal ring graphics
     const nexusGfx = this.add.graphics().setDepth(80);
     nexusGfx.lineStyle(3, 0xffd700, 0.8);
     nexusGfx.strokeCircle(this.portalX, this.portalY, 75);
@@ -1105,12 +1456,17 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       tint: [0xffd700, 0xff8c00],
     }).setDepth(84);
 
-    this.portalZone = this.add.zone(this.portalX, this.portalY, 70, 70);
+    this.portalZone = this.add.zone(this.portalX, this.portalY, 80, 80);
     this.physics.add.existing(this.portalZone, true);
     this.physics.add.overlap(this.player, this.portalZone, () => this.exitZone(), null, this);
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  HUD                                                               */
+  /* ------------------------------------------------------------------ */
+
   createHUD() {
+    // Zone title
     const hudTitle = this.add.text(20, 20, 'ZONE 3: ROUTER NEXUS', {
       fontFamily: '"Courier New", monospace',
       fontSize: '18px',
@@ -1119,13 +1475,19 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     }).setScrollFactor(0).setDepth(200);
     addGlow(hudTitle, 0xffd700, 2, 0, false, 0.1, 8);
 
-    this.prefixHUD = this.add.text(20, 50, 'Prefix: []', {
-      fontFamily: '"Courier New", monospace',
-      fontSize: '18px',
-      color: '#ffd700',
-      resolution: 2,
-    }).setScrollFactor(0).setDepth(200);
+    // HP display
+    this.hpContainer = this.add.container(20, 50).setScrollFactor(0).setDepth(200);
+    this.hpPips = [];
 
+    for (let i = 0; i < this.player.maxHp; i++) {
+      const pip = this.add.image(i * 28, 0, 'hp_pip');
+      pip.setScale(1.0);
+      pip.setDepth(200);
+      this.hpContainer.add(pip);
+      this.hpPips.push(pip);
+    }
+
+    // Score display
     this.scoreHUD = this.add.text(GAME.WIDTH - 20, 20, 'Score: 0', {
       fontFamily: '"Courier New", monospace',
       fontSize: '18px',
@@ -1134,14 +1496,30 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     }).setOrigin(1, 0).setScrollFactor(0).setDepth(200);
   }
 
-  updatePrefixHUD() {
-    this.prefixHUD.setText('Prefix: ' + this.prefixFragments.join(' '));
+  updateHPDisplay() {
+    this.hpPips.forEach((pip, i) => {
+      if (i < this.player.hp) {
+        pip.setAlpha(1);
+        pip.setTint(0xff4444);
+      } else {
+        pip.setAlpha(0.2);
+        pip.setTint(0x333333);
+      }
+    });
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  Camera                                                            */
+  /* ------------------------------------------------------------------ */
+
   setupCamera() {
-    this.cameras.main.setBounds(0, 0, WORLD.width, GAME.HEIGHT);
+    this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
   }
+
+  /* ------------------------------------------------------------------ */
+  /*  Exit Zone                                                         */
+  /* ------------------------------------------------------------------ */
 
   exitZone() {
     if (this._exiting) return;
@@ -1150,6 +1528,7 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     this.player.body.setVelocity(0, 0);
     this.player.disableBody(true, false);
 
+    // Portal suction effect
     this.add.particles(this.portalX, this.portalY, 'particle_soft', {
       speed: { min: -100, max: -10 },
       scale: { start: 0, end: 0.6 },
@@ -1194,27 +1573,66 @@ export class Zone3_RouterNexus extends Phaser.Scene {
     });
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  Update Loop                                                       */
+  /* ------------------------------------------------------------------ */
+
   update(time, delta) {
-    const effectiveSpeed = GAME.PLAYER_SPEED * this.speedMultiplier;
+    if (this._exiting) return;
+
     this.player.update(time, delta);
-
-    if (this.speedMultiplier !== 1 && !this.player.isDashing) {
-      const vel = this.player.body.velocity;
-      const len = vel.length();
-      if (len > 0) {
-        vel.normalize();
-        vel.scale(effectiveSpeed);
-      }
-    }
-
     this.parallax.update(this.cameras.main);
+
+    // Update HUD
+    this.updateHPDisplay();
     this.scoreHUD.setText('Score: ' + this.score);
 
-    // Boss figure-8 movement + slow rotation
+    // Update moving platforms
+    this.movingPlatforms.forEach(mp => {
+      mp.updatePlatform(time, delta);
+    });
+
+    // Conveyor effect on player
+    this.conveyors.forEach(cv => {
+      if (this.player.body.touching.down) {
+        const bounds = cv.getBounds();
+        const playerBounds = this.player.getBounds();
+        if (Phaser.Geom.Rectangle.Overlaps(bounds, playerBounds)) {
+          this.player.body.velocity.x += cv._conveyorSpeed * (delta / 1000) * 5;
+        }
+      }
+    });
+
+    // Update enemies
+    this.enemies.forEach(e => {
+      if (e.active && !e._dead) {
+        e.update(time, delta, this.player);
+      }
+    });
+
+    // Player attack hitbox vs enemies
+    if (this.player.attackHitbox) {
+      this.enemies.forEach(e => {
+        if (e.active && !e._dead && !e._hurt) {
+          const hb = this.player.attackHitbox;
+          const dx = Math.abs(hb.x - e.x);
+          const dy = Math.abs(hb.y - e.y);
+          if (dx < GAME.ATTACK_RANGE && dy < 60) {
+            const dir = this.player.facing;
+            e.takeDamage(GAME.ATTACK_DAMAGE, dir);
+            this.score += e._scoreValue || 10;
+            createCollectBurst(this, e.x, e.y, 0xffd700);
+          }
+        }
+      });
+    }
+
+    // Boss movement: slow figure-8 float above the arena
     if (this.bossActive && !this.bossDefeated && this.boss && this.boss.active) {
       this.bossPhaseTime += delta * 0.001;
-      const figureEightX = Math.sin(this.bossPhaseTime * 0.5) * 250;
-      const figureEightY = Math.sin(this.bossPhaseTime * 1.0) * 160;
+      const speedMult = this.bossPhase2 ? 1.5 : 1.0;
+      const figureEightX = Math.sin(this.bossPhaseTime * 0.4 * speedMult) * 400;
+      const figureEightY = Math.sin(this.bossPhaseTime * 0.8 * speedMult) * 200;
       const bx = this.bossArenaCenterX + figureEightX;
       const by = this.bossArenaCenterY + figureEightY;
 
@@ -1222,11 +1640,13 @@ export class Zone3_RouterNexus extends Phaser.Scene {
       this.boss.y = by;
       this.boss.body.updateFromGameObject();
 
-      // Move all rings and core with the boss
+      // Move rings and core with boss
       this.bossRings.forEach(ring => {
-        ring.x = bx;
-        ring.y = by;
-        ring.angle += ring._rotSpeed;
+        if (ring.active) {
+          ring.x = bx;
+          ring.y = by;
+          ring.angle += ring._rotSpeed;
+        }
       });
 
       if (this.bossCore && this.bossCore.active) {

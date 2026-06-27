@@ -9,7 +9,7 @@ export function createAmbientParticles(scene, palette, config = {}) {
     scale: { start: config.scaleStart || 0.35, end: 0, random: true },
     alpha: { start: config.alphaStart || 0.5, end: 0 },
     lifespan: config.lifespan || { min: 3000, max: 6000 },
-    frequency: config.frequency || 150,
+    frequency: config.frequency || 120,
     blendMode: Phaser.BlendModes.ADD,
     tint: palette.particles,
   }).setScrollFactor(0).setDepth(config.depth || 50);
@@ -60,17 +60,62 @@ export function createCollectBurst(scene, x, y, color) {
   }).setDepth(110);
 
   emitter.explode(18, x, y);
-
   scene.time.delayedCall(600, () => emitter.destroy());
 }
 
-export function createBossExplosion(scene, x, y, colors, count = 5) {
+export function createBossExplosion(scene, x, y, colors, count = 6) {
   for (let i = 0; i < count; i++) {
     scene.time.delayedCall(i * 120, () => {
-      const ox = x + Phaser.Math.Between(-50, 50);
-      const oy = y + Phaser.Math.Between(-50, 50);
+      const ox = x + Phaser.Math.Between(-60, 60);
+      const oy = y + Phaser.Math.Between(-60, 60);
       const color = colors[i % colors.length];
       createCollectBurst(scene, ox, oy, color);
     });
   }
+}
+
+export function createEnemyDeath(scene, x, y, color) {
+  const emitter = scene.add.particles(x, y, 'particle_spark', {
+    speed: { min: 120, max: 350 },
+    scale: { start: 0.5, end: 0 },
+    alpha: { start: 0.9, end: 0 },
+    lifespan: 600,
+    blendMode: Phaser.BlendModes.ADD,
+    tint: [color, 0xffffff, color],
+    quantity: 20,
+    emitting: false,
+  }).setDepth(110);
+
+  emitter.explode(20, x, y);
+  scene.time.delayedCall(700, () => emitter.destroy());
+}
+
+export function createGroundFog(scene, worldWidth, groundY, color = 0x4444aa) {
+  return scene.add.particles(0, groundY - 30, 'particle_soft', {
+    x: { min: 0, max: worldWidth },
+    speedX: { min: -20, max: 20 },
+    speedY: { min: -15, max: -5 },
+    scale: { start: 0.6, end: 0, random: true },
+    alpha: { start: 0.15, end: 0 },
+    lifespan: { min: 4000, max: 8000 },
+    frequency: 80,
+    blendMode: Phaser.BlendModes.ADD,
+    tint: color,
+  }).setDepth(45);
+}
+
+export function createRainParticles(scene) {
+  return scene.add.particles(0, 0, 'particle_dot', {
+    x: { min: 0, max: scene.scale.width },
+    y: -20,
+    speedY: { min: 400, max: 600 },
+    speedX: { min: -30, max: -10 },
+    scaleX: 0.15,
+    scaleY: { start: 0.6, end: 0.3 },
+    alpha: { start: 0.3, end: 0.1 },
+    lifespan: { min: 1500, max: 2500 },
+    frequency: 10,
+    blendMode: Phaser.BlendModes.ADD,
+    tint: 0x6688ff,
+  }).setScrollFactor(0).setDepth(200);
 }

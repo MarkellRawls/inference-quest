@@ -112,7 +112,8 @@ export class InfoCardScene extends Phaser.Scene {
     btnBg.setScale(0.9, 1);
     this.cardContainer.add(btnBg);
 
-    const btnText = this.add.text(0, btnY, 'CONTINUE', {
+    const btnLabel = nextZone ? 'CONTINUE' : 'RETURN TO MENU';
+    const btnText = this.add.text(0, btnY, btnLabel, {
       fontFamily: '"Courier New", monospace',
       fontSize: '22px',
       fontStyle: 'bold',
@@ -160,6 +161,8 @@ export class InfoCardScene extends Phaser.Scene {
         this.scene.stop(SCENES.INFO_CARD);
         if (nextZone) {
           this.scene.start(nextZone, playerData || {});
+        } else {
+          this.scene.start(SCENES.MENU);
         }
       },
     });

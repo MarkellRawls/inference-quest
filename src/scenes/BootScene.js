@@ -12,6 +12,7 @@ export class BootScene extends Phaser.Scene {
     this.generateParticleSpark();
     this.generatePlayerOrb();
     this.generatePlayerTrail();
+    this.generateEnemyCore();
     this.generateGateBlock();
     this.generateTokenLeaf();
     this.generateCrystal();
@@ -19,6 +20,7 @@ export class BootScene extends Phaser.Scene {
     this.generateButtonBg();
     this.generatePortalRing();
     this.generateBossRing();
+    this.generateHpPip();
 
     this.scene.start(SCENES.MENU);
   }
@@ -108,6 +110,24 @@ export class BootScene extends Phaser.Scene {
     tex.refresh();
   }
 
+  generateEnemyCore() {
+    const size = 120;
+    const tex = this.textures.createCanvas('enemy_core', size, size);
+    const ctx = tex.getContext();
+    const cx = size / 2;
+
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+    g.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    g.addColorStop(0.15, 'rgba(255, 200, 200, 0.9)');
+    g.addColorStop(0.3, 'rgba(255, 100, 100, 0.5)');
+    g.addColorStop(0.5, 'rgba(255, 50, 50, 0.2)');
+    g.addColorStop(0.7, 'rgba(200, 0, 0, 0.05)');
+    g.addColorStop(1, 'rgba(150, 0, 0, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    tex.refresh();
+  }
+
   generateGateBlock() {
     const gfx = this.add.graphics();
     gfx.fillStyle(0xffffff, 1);
@@ -185,10 +205,6 @@ export class BootScene extends Phaser.Scene {
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(0, 200, 255, 0.15)';
-    ctx.lineWidth = 6;
-    ctx.stroke();
-
     tex.refresh();
   }
 
@@ -234,6 +250,22 @@ export class BootScene extends Phaser.Scene {
     ctx.arc(cx, cx, cx - 24, 0, Math.PI * 2);
     ctx.stroke();
 
+    tex.refresh();
+  }
+
+  generateHpPip() {
+    const size = 24;
+    const tex = this.textures.createCanvas('hp_pip', size, size);
+    const ctx = tex.getContext();
+    const cx = size / 2;
+
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+    g.addColorStop(0, 'rgba(255, 100, 100, 1)');
+    g.addColorStop(0.4, 'rgba(255, 50, 50, 0.8)');
+    g.addColorStop(0.7, 'rgba(200, 0, 0, 0.3)');
+    g.addColorStop(1, 'rgba(150, 0, 0, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
     tex.refresh();
   }
 }

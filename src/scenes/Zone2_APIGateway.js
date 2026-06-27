@@ -4,31 +4,25 @@ import { PALETTES } from '../config/colors.js';
 import { ZONE_CARDS } from '../config/cards.js';
 import { Player } from '../objects/Player.js';
 import { ParallaxBackground } from '../objects/ParallaxBackground.js';
+import { createRogueRequest, createSpamBot, createFirewallDrone } from '../objects/Enemy.js';
+import { createPlatform, createSolidPlatform, createGround, createMovingPlatform, createCrumblingPlatform, createHazardSpikes, createConveyor } from '../objects/Platform.js';
 import { generateStarField, generateNebula, generateCitySkyline } from '../effects/procedural.js';
-import { createNeonStreaks, createPortalParticles, createCollectBurst } from '../effects/particles.js';
+import { createNeonStreaks, createAmbientParticles, createPortalParticles, createCollectBurst, createEnemyDeath, createGroundFog, createRainParticles } from '../effects/particles.js';
 import { addGlow, addPostBloom } from '../utils/helpers.js';
 
 const PALETTE = PALETTES.API_GATEWAY;
 const WORLD = ZONE_WORLDS.API_GATEWAY;
 
-const TOKEN_TYPES = [
-  { name: 'API Key', color: 0xffd700, shape: 'hexagon' },
-  { name: 'OAuth', color: 0x4488ff, shape: 'circle' },
-  { name: 'JWT', color: 0x44ff88, shape: 'rect' },
-];
+const GROUND_Y = 1700;
+const GROUND_HEIGHT = 60;
 
-const DATA_TOOLTIPS = [
-  'header: Content-Type: application/json',
-  'header: Authorization: Bearer ***',
-  'body: { "model": "llm-d" }',
-  'body: { "prompt": "..." }',
-  'header: X-Request-ID: abc123',
-  'body: { "temperature": 0.7 }',
-  'header: Accept: text/event-stream',
-  'body: { "max_tokens": 1024 }',
-];
+const NEON_SIGNS = ['API v2.0', 'HTTPS', 'gRPC', 'REST', 'llm-d', 'JSON', 'WebSocket'];
 
-const NEON_SIGNS = ['API v2.0', 'HTTPS', 'REST', 'gRPC', 'JSON', 'WebSocket', 'OAuth 2.0', 'TLS 1.3'];
+/* ====================================================================== */
+/*  Zone 2 -- The API Gateway                                             */
+/*  A cyberpunk city side-scroller with gravity, firewalls, rate limiters, */
+/*  rogue bot traffic, and the Rate Limit Guardian boss.                   */
+/* ====================================================================== */
 
 export class Zone2_APIGateway extends Phaser.Scene {
   constructor() {
@@ -41,23 +35,30 @@ export class Zone2_APIGateway extends Phaser.Scene {
 
   create() {
     this.physics.world.setBounds(0, 0, WORLD.width, WORLD.height);
+    this.physics.world.gravity.y = GAME.GRAVITY;
     this._exiting = false;
 
     this.createBackgrounds();
     this.createAmbientEffects();
     this.createNeonSigns();
+    this.createTerrain();
+    this.createPlatforms();
+    this.createLaserGates();
     this.createPlayer();
-    this.createGates();
-    this.createRateLimiters();
-    this.createRequestQueue();
-    this.createDataPackets();
+    this.createEnemies();
     this.createBoss();
     this.setupCamera();
     this.createHUD();
 
+    this.setupCollisions();
+
     this.cameras.main.fadeIn(GAME.ZONE_TRANSITION_DURATION, 0, 0, 0);
     addPostBloom(this.cameras.main, 0xffffff, 0.5, 0.5, 1, 1.3, 4);
   }
+
+  /* ------------------------------------------------------------------ */
+  /*  Backgrounds & parallax                                            */
+  /* ------------------------------------------------------------------ */
 
   createBackgrounds() {
     if (!this.textures.exists('z2_stars')) {
@@ -78,12 +79,18 @@ export class Zone2_APIGateway extends Phaser.Scene {
     ]);
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  Ambient effects -- rain, fog, neon streaks                        */
+  /* ------------------------------------------------------------------ */
+
   createAmbientEffects() {
     this.neonStreaks = createNeonStreaks(this, PALETTE);
-    // Make neon streaks more vibrant: increase alpha and frequency
     if (this.neonStreaks && this.neonStreaks.setAlpha) {
       this.neonStreaks.setAlpha(0.9);
     }
+
+    this.rain = createRainParticles(this);
+    this.groundFog = createGroundFog(this, WORLD.width, GROUND_Y, 0x4400aa);
   }
 
   /* ------------------------------------------------------------------ */
@@ -94,13 +101,13 @@ export class Zone2_APIGateway extends Phaser.Scene {
     const signSpacing = WORLD.width / (NEON_SIGNS.length + 1);
     NEON_SIGNS.forEach((label, i) => {
       const x = signSpacing * (i + 1) + Phaser.Math.Between(-100, 100);
-      const y = Phaser.Math.Between(60, 180);
+      const y = Phaser.Math.Between(400, 900);
       const color = Phaser.Utils.Array.GetRandom(PALETTE.neon);
       const hexColor = '#' + color.toString(16).padStart(6, '0');
 
       const sign = this.add.text(x, y, label, {
         fontFamily: '"Courier New", monospace',
-        fontSize: '22px',
+        fontSize: '28px',
         fontStyle: 'bold',
         color: hexColor,
         resolution: 2,
@@ -108,7 +115,6 @@ export class Zone2_APIGateway extends Phaser.Scene {
       sign.setOrigin(0.5).setDepth(5).setAlpha(0.35);
       addGlow(sign, color, 4, 0, false, 0.1, 16);
 
-      // Pulsing glow animation
       this.tweens.add({
         targets: sign,
         alpha: { from: 0.2, to: 0.55 },
@@ -121,431 +127,252 @@ export class Zone2_APIGateway extends Phaser.Scene {
     });
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  Terrain -- ground segments as building rooftops                    */
+  /* ------------------------------------------------------------------ */
+
+  createTerrain() {
+    this.grounds = [];
+
+    const segments = [
+      { x: 0, w: 1800 },
+      { x: 2200, w: 1600 },
+      { x: 4200, w: 1400 },
+      { x: 6000, w: 1800 },
+      { x: 8200, w: 1600 },
+      { x: 10200, w: 1800 },
+    ];
+
+    segments.forEach(seg => {
+      const g = createGround(this, seg.x, GROUND_Y, seg.w, PALETTE.accent, GROUND_HEIGHT);
+      this.grounds.push(g);
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Platforms, conveyors, crumbling, spikes, moving elevators          */
+  /* ------------------------------------------------------------------ */
+
+  createPlatforms() {
+    this.platforms = [];
+    this.movingPlatforms = [];
+    this.crumblingPlatforms = [];
+    this.conveyors = [];
+    this.hazards = [];
+
+    /* -- Section 1 (x 0-1800): Introductory rooftop platforms -- */
+    this.platforms.push(createPlatform(this, 350, 1450, 250, 0x00ffff));
+    this.platforms.push(createPlatform(this, 700, 1250, 200, 0x00ffff));
+    this.platforms.push(createPlatform(this, 1100, 1350, 220, 0x00ffff));
+    this.platforms.push(createSolidPlatform(this, 1500, 1500, 200, 0xff00ff));
+
+    /* -- Gap 1 (x 1800-2200): crumbling bridge -- */
+    const crumb1 = createCrumblingPlatform(this, 1950, 1550, 180, 0xffaa44);
+    this.crumblingPlatforms.push(crumb1);
+    this.platforms.push(crumb1);
+
+    /* -- Section 2 (x 2200-3800): server room with conveyors -- */
+    const conv1 = createConveyor(this, 2400, 1500, 300, 120, 0x44aaff);
+    this.conveyors.push(conv1);
+    this.platforms.push(conv1);
+
+    this.platforms.push(createPlatform(this, 2900, 1350, 200, 0x00ffff));
+    this.platforms.push(createPlatform(this, 3300, 1250, 220, 0x00ffff));
+
+    const conv2 = createConveyor(this, 3100, 1500, 250, -100, 0x44aaff);
+    this.conveyors.push(conv2);
+    this.platforms.push(conv2);
+
+    /* -- Gap 2 (x 3800-4200): spike pit -- */
+    const spikes1 = createHazardSpikes(this, 3950, GROUND_Y + 10, 200, 0xff2222);
+    this.hazards.push(spikes1);
+
+    const crumb2 = createCrumblingPlatform(this, 4000, 1500, 150, 0xffaa44);
+    this.crumblingPlatforms.push(crumb2);
+    this.platforms.push(crumb2);
+
+    /* -- Section 3 (x 4200-5600): vertical city climb -- */
+    this.platforms.push(createPlatform(this, 4400, 1450, 200, 0x00ffff));
+
+    // Vertical elevator
+    const elev1 = createMovingPlatform(this, 4700, 1400, 160, {
+      color: 0xff00ff, moveType: 'vertical', range: 250, speed: 0.8, phase: 0,
+    });
+    this.movingPlatforms.push(elev1);
+    this.platforms.push(elev1);
+
+    this.platforms.push(createSolidPlatform(this, 4950, 1200, 250, 0xff00ff));
+    this.platforms.push(createPlatform(this, 5300, 1350, 180, 0x00ffff));
+
+    // Spike hazard on a ledge
+    const spikes2 = createHazardSpikes(this, 5200, 1180, 140, 0xff2222);
+    this.hazards.push(spikes2);
+
+    /* -- Gap 3 (x 5600-6000): danger crossing -- */
+    const crumb3 = createCrumblingPlatform(this, 5750, 1500, 160, 0xffaa44);
+    this.crumblingPlatforms.push(crumb3);
+    this.platforms.push(crumb3);
+
+    const crumb4 = createCrumblingPlatform(this, 5950, 1400, 140, 0xffaa44);
+    this.crumblingPlatforms.push(crumb4);
+    this.platforms.push(crumb4);
+
+    /* -- Section 4 (x 6000-7800): firewall gauntlet -- */
+    this.platforms.push(createPlatform(this, 6200, 1450, 200, 0x00ffff));
+
+    const conv3 = createConveyor(this, 6600, 1500, 350, 150, 0x44aaff);
+    this.conveyors.push(conv3);
+    this.platforms.push(conv3);
+
+    const elev2 = createMovingPlatform(this, 7000, 1350, 160, {
+      color: 0xff00ff, moveType: 'vertical', range: 300, speed: 1.0, phase: Math.PI,
+    });
+    this.movingPlatforms.push(elev2);
+    this.platforms.push(elev2);
+
+    this.platforms.push(createSolidPlatform(this, 7300, 1250, 200, 0xff00ff));
+
+    const spikes3 = createHazardSpikes(this, 7500, GROUND_Y + 10, 160, 0xff2222);
+    this.hazards.push(spikes3);
+
+    this.platforms.push(createPlatform(this, 7600, 1400, 200, 0x00ffff));
+
+    /* -- Gap 4 (x 7800-8200): final approach -- */
+    const elev3 = createMovingPlatform(this, 7950, 1500, 180, {
+      color: 0x00ffff, moveType: 'horizontal', range: 150, speed: 0.7, phase: 0,
+    });
+    this.movingPlatforms.push(elev3);
+    this.platforms.push(elev3);
+
+    /* -- Section 5 (x 8200-9800): pre-boss area -- */
+    this.platforms.push(createPlatform(this, 8500, 1400, 250, 0x00ffff));
+    this.platforms.push(createPlatform(this, 8900, 1300, 200, 0x00ffff));
+    this.platforms.push(createSolidPlatform(this, 9300, 1450, 220, 0xff00ff));
+
+    const spikes4 = createHazardSpikes(this, 9550, GROUND_Y + 10, 200, 0xff2222);
+    this.hazards.push(spikes4);
+
+    /* -- Section 6 (x 10200-12000): Boss arena platforms -- */
+    // Three tiers for dodging during boss fight
+    this.platforms.push(createSolidPlatform(this, 10500, 1450, 300, 0xff00ff));
+    this.platforms.push(createSolidPlatform(this, 11100, 1450, 300, 0xff00ff));
+    this.platforms.push(createPlatform(this, 10800, 1250, 350, 0x00ffff));
+    this.platforms.push(createPlatform(this, 11400, 1250, 250, 0x00ffff));
+    this.platforms.push(createPlatform(this, 11000, 1050, 300, 0x00ffff));
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Timed laser gates                                                 */
+  /* ------------------------------------------------------------------ */
+
+  createLaserGates() {
+    this.laserGates = [];
+
+    const laserDefs = [
+      { x: 2050, y: 1350, w: 20, h: 350 },
+      { x: 4100, y: 1300, w: 20, h: 400 },
+      { x: 5650, y: 1250, w: 20, h: 450 },
+      { x: 7850, y: 1350, w: 20, h: 350 },
+    ];
+
+    laserDefs.forEach((ld, i) => {
+      const laser = this.add.rectangle(ld.x, ld.y, ld.w, ld.h, 0xff2222, 0.85);
+      laser.setDepth(55);
+      addGlow(laser, 0xff0000, 4, 0, false, 0.1, 16);
+
+      this.physics.add.existing(laser, true);
+      laser._on = true;
+      laser._def = ld;
+
+      // Stagger the timing per gate
+      const onDuration = 2000;
+      const offDuration = 1500;
+      const offset = i * 600;
+
+      this.time.delayedCall(offset, () => {
+        this.time.addEvent({
+          delay: onDuration + offDuration,
+          callback: () => {
+            // Turn off
+            laser._on = false;
+            laser.setAlpha(0.1);
+            laser.body.setEnable(false);
+
+            this.time.delayedCall(offDuration, () => {
+              // Turn on with warning flash
+              this.tweens.add({
+                targets: laser,
+                alpha: { from: 0.15, to: 0.85 },
+                duration: 100,
+                yoyo: true,
+                repeat: 2,
+                onComplete: () => {
+                  laser._on = true;
+                  laser.setAlpha(0.85);
+                  laser.body.setEnable(true);
+                  laser.body.updateFromGameObject();
+                },
+              });
+            });
+          },
+          loop: true,
+        });
+      });
+
+      this.laserGates.push(laser);
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Player                                                            */
+  /* ------------------------------------------------------------------ */
+
   createPlayer() {
-    this.player = new Player(this, 150, GAME.HEIGHT / 2);
+    this.player = new Player(this, 150, GROUND_Y - 60);
     this.player.setZonePalette(PALETTE);
   }
 
-  createGates() {
-    this.gates = [];
-    this.authTokens = this.physics.add.group();
+  /* ------------------------------------------------------------------ */
+  /*  Enemies                                                           */
+  /* ------------------------------------------------------------------ */
 
-    const gatePositions = [
-      { x: 1500, tokenType: 0, tokenX: 1200, tokenY: 375 },
-      { x: 3300, tokenType: 1, tokenX: 2850, tokenY: 675 },
-      { x: 5100, tokenType: 2, tokenX: 4650, tokenY: 300 },
-      { x: 6900, tokenType: 0, tokenX: 6450, tokenY: 750 },
+  createEnemies() {
+    this.enemies = [];
+    this._enemyProjectiles = this.physics.add.group();
+
+    // --- Rogue Requests on ground (10 total) ---
+    const roguePositions = [800, 1400, 2600, 3500, 4500, 6300, 6800, 7400, 8600, 9400];
+    roguePositions.forEach(rx => {
+      const e = createRogueRequest(this, rx, GROUND_Y - 40);
+      this.enemies.push(e);
+    });
+
+    // --- SpamBot swarms (4 swarms of 3-4 = 14 total) ---
+    const swarmCenters = [
+      { x: 1000, count: 3 },
+      { x: 3000, count: 4 },
+      { x: 5100, count: 4 },
+      { x: 8000, count: 3 },
     ];
-
-    gatePositions.forEach((gp, i) => {
-      const gate = this.createGate(gp.x, gp.tokenType, i);
-      this.gates.push(gate);
-      this.createAuthToken(gp.tokenX, gp.tokenY, gp.tokenType, i);
-    });
-  }
-
-  createGate(x, tokenTypeIdx, gateIndex) {
-    const tt = TOKEN_TYPES[tokenTypeIdx];
-    const gateGroup = this.physics.add.staticGroup();
-
-    const topBar = this.add.rectangle(x, 0, 18, GAME.HEIGHT / 2 - 90, tt.color);
-    topBar.setOrigin(0.5, 0).setDepth(60);
-    addGlow(topBar, tt.color, 3, 0, false, 0.1, 12);
-    gateGroup.add(topBar);
-
-    const bottomBar = this.add.rectangle(x, GAME.HEIGHT / 2 + 90, 18, GAME.HEIGHT / 2 - 90, tt.color);
-    bottomBar.setOrigin(0.5, 0).setDepth(60);
-    addGlow(bottomBar, tt.color, 3, 0, false, 0.1, 12);
-    gateGroup.add(bottomBar);
-
-    const lockText = this.add.text(x, GAME.HEIGHT / 2, 'LOCKED', {
-      fontFamily: '"Courier New", monospace',
-      fontSize: '18px',
-      fontStyle: 'bold',
-      color: '#ff4444',
-      resolution: 2,
-    });
-    lockText.setOrigin(0.5).setDepth(61);
-    addGlow(lockText, 0xff0000, 3, 0, false, 0.1, 12);
-
-    const label = this.add.text(x, GAME.HEIGHT / 2 - 105, `Requires: ${tt.name}`, {
-      fontFamily: '"Courier New", monospace',
-      fontSize: '14px',
-      color: '#' + tt.color.toString(16).padStart(6, '0'),
-      resolution: 2,
-    });
-    label.setOrigin(0.5).setDepth(61);
-
-    this.physics.add.collider(this.player, gateGroup);
-
-    return {
-      group: gateGroup,
-      topBar,
-      bottomBar,
-      lockText,
-      label,
-      tokenType: tokenTypeIdx,
-      unlocked: false,
-      x,
-    };
-  }
-
-  createAuthToken(x, y, tokenTypeIdx, gateIndex) {
-    const tt = TOKEN_TYPES[tokenTypeIdx];
-
-    const token = this.physics.add.sprite(x, y, 'player_orb');
-    token.setScale(0.35);
-    token.setTint(tt.color);
-    token.setBlendMode(Phaser.BlendModes.ADD);
-    token.setDepth(70);
-    addGlow(token, tt.color, 4, 0, false, 0.1, 16);
-    token._gateIndex = gateIndex;
-    token._tokenType = tokenTypeIdx;
-
-    const label = this.add.text(x, y - 33, tt.name, {
-      fontFamily: '"Courier New", monospace',
-      fontSize: '14px',
-      fontStyle: 'bold',
-      color: '#ffffff',
-      resolution: 2,
-    });
-    label.setOrigin(0.5).setDepth(71);
-    token._label = label;
-
-    this.tweens.add({
-      targets: [token, label],
-      y: y - 15,
-      duration: 1200 + Math.random() * 400,
-      ease: 'Sine.easeInOut',
-      yoyo: true,
-      repeat: -1,
-    });
-
-    this.authTokens.add(token);
-    this.physics.add.overlap(this.player, token, () => this.collectAuthToken(token), null, this);
-  }
-
-  collectAuthToken(token) {
-    const gateIndex = token._gateIndex;
-    const gate = this.gates[gateIndex];
-
-    createCollectBurst(this, token.x, token.y, TOKEN_TYPES[token._tokenType].color);
-    this.cameras.main.shake(80, 0.004);
-
-    if (token._label) token._label.destroy();
-    token.destroy();
-
-    this.unlockGate(gate);
-  }
-
-  unlockGate(gate) {
-    gate.unlocked = true;
-    gate.lockText.setText('OPEN');
-    gate.lockText.setColor('#44ff44');
-
-    // Particle burst from gate bars
-    for (let i = 0; i < 8; i++) {
-      const burstY = Phaser.Math.Between(100, GAME.HEIGHT - 100);
-      this.time.delayedCall(i * 40, () => {
-        createCollectBurst(this, gate.x, burstY, 0x44ff44);
-      });
-    }
-
-    // Neon flash overlay
-    const flash = this.add.rectangle(gate.x, GAME.HEIGHT / 2, 200, GAME.HEIGHT, 0x44ff44, 0.4);
-    flash.setDepth(100);
-    this.tweens.add({
-      targets: flash,
-      alpha: 0,
-      scaleX: 3,
-      duration: 400,
-      ease: 'Power2',
-      onComplete: () => flash.destroy(),
-    });
-
-    this.tweens.add({
-      targets: gate.topBar,
-      scaleY: 0,
-      duration: 600,
-      ease: 'Power2',
-    });
-
-    this.tweens.add({
-      targets: gate.bottomBar,
-      scaleY: 0,
-      duration: 600,
-      ease: 'Power2',
-      onComplete: () => {
-        gate.group.getChildren().forEach(c => c.destroy());
-        gate.lockText.destroy();
-        gate.label.destroy();
-      },
-    });
-
-    this.cameras.main.shake(100, 0.005);
-  }
-
-  createRateLimiters() {
-    this.rateLimiters = [];
-    const limiterPositions = [
-      { x: 2250, y: GAME.HEIGHT / 2, amplitude: 375, speed: 0.002 },
-      { x: 4200, y: GAME.HEIGHT / 2, amplitude: 300, speed: 0.003 },
-      { x: 6000, y: GAME.HEIGHT / 2, amplitude: 420, speed: 0.0025 },
-    ];
-
-    limiterPositions.forEach(lp => {
-      const beam = this.add.rectangle(lp.x, lp.y, GAME.WIDTH * 0.6, 12, 0xff4444);
-      beam.setDepth(55);
-      addGlow(beam, 0xff0000, 4, 0, false, 0.1, 16);
-      this.physics.add.existing(beam, false);
-      beam.body.setImmovable(true);
-      beam.body.setAllowGravity(false);
-
-      beam._config = lp;
-      beam._cooldown = false;
-      beam._baseY = lp.y;
-      beam._warningActive = false;
-      this.rateLimiters.push(beam);
-
-      this.physics.add.overlap(this.player, beam, () => this.hitRateLimiter(beam), null, this);
-    });
-
-    this.rateLimitWarning = this.add.text(GAME.WIDTH / 2, 120, '429 Too Many Requests', {
-      fontFamily: '"Courier New", monospace',
-      fontSize: '36px',
-      fontStyle: 'bold',
-      color: '#ff4444',
-      resolution: 2,
-    });
-    this.rateLimitWarning.setOrigin(0.5);
-    this.rateLimitWarning.setScrollFactor(0);
-    this.rateLimitWarning.setDepth(300);
-    this.rateLimitWarning.setAlpha(0);
-    addGlow(this.rateLimitWarning, 0xff0000, 6, 0, false, 0.1, 16);
-
-    // Start beam warning flash cycle
-    this._beamWarningTimer = this.time.addEvent({
-      delay: 2800,
-      callback: () => this.flashBeamWarnings(),
-      loop: true,
-    });
-  }
-
-  /* Flash rate limiter beams red 3 times before they go solid */
-  flashBeamWarnings() {
-    this.rateLimiters.forEach(beam => {
-      if (beam._cooldown || beam._warningActive) return;
-      beam._warningActive = true;
-
-      // 3 quick red blinks
-      let blinkCount = 0;
-      const blinkEvent = this.time.addEvent({
-        delay: 120,
-        callback: () => {
-          blinkCount++;
-          if (blinkCount % 2 === 1) {
-            beam.setFillStyle(0xff0000);
-            beam.setAlpha(1);
-          } else {
-            beam.setFillStyle(0xff4444);
-            beam.setAlpha(0.7);
-          }
-          if (blinkCount >= 6) {
-            beam.setFillStyle(0xff4444);
-            beam.setAlpha(1);
-            beam._warningActive = false;
-            blinkEvent.remove();
-          }
-        },
-        loop: true,
-      });
-    });
-  }
-
-  hitRateLimiter(beam) {
-    if (beam._cooldown || this.player._invulnerable) return;
-
-    const pushDir = this.player.x > beam.x ? 1 : -1;
-    this.player.body.setVelocity(pushDir * 400, -200);
-
-    this.player._invulnerable = true;
-    this.tweens.add({
-      targets: this.player,
-      alpha: 0.3,
-      duration: 100,
-      yoyo: true,
-      repeat: 5,
-      onComplete: () => {
-        this.player.setAlpha(1);
-        this.player._invulnerable = false;
-      },
-    });
-
-    this.cameras.main.shake(150, 0.008);
-
-    this.tweens.add({
-      targets: this.rateLimitWarning,
-      alpha: 1,
-      duration: 100,
-      yoyo: true,
-      hold: 600,
-    });
-
-    // Particle trail on the beam
-    createCollectBurst(this, this.player.x, beam.y, 0xff4444);
-
-    beam._cooldown = true;
-    beam.setFillStyle(0x44ff44);
-    this.time.delayedCall(1500, () => {
-      beam._cooldown = false;
-      beam.setFillStyle(0xff4444);
-    });
-  }
-
-  createRequestQueue() {
-    this.queueGates = [];
-    this.queueProgress = 0;
-    const queueStartX = 7500;
-
-    for (let i = 0; i < 3; i++) {
-      const x = queueStartX + i * 270;
-      const num = i + 1;
-
-      const gate = this.add.rectangle(x, GAME.HEIGHT / 2, 45, 180, 0x4488ff, 0.4);
-      gate.setDepth(55);
-      addGlow(gate, 0x4488ff, 2, 0, false, 0.1, 12);
-
-      const numText = this.add.text(x, GAME.HEIGHT / 2, `${num}`, {
-        fontFamily: '"Courier New", monospace',
-        fontSize: '48px',
-        fontStyle: 'bold',
-        color: '#4488ff',
-        resolution: 2,
-      });
-      numText.setOrigin(0.5).setDepth(56);
-
-      const zone = this.add.zone(x, GAME.HEIGHT / 2, 75, 210);
-      this.physics.add.existing(zone, true);
-      this.physics.add.overlap(this.player, zone, () => this.hitQueueGate(i), null, this);
-
-      this.queueGates.push({ gate, numText, passed: false, index: i });
-    }
-
-    const queueLabel = this.add.text(queueStartX + 270, GAME.HEIGHT / 2 - 150, 'REQUEST QUEUE\nPass in order: 1 > 2 > 3', {
-      fontFamily: '"Courier New", monospace',
-      fontSize: '18px',
-      color: '#4488ff',
-      align: 'center',
-      resolution: 2,
-    });
-    queueLabel.setOrigin(0.5).setDepth(60);
-  }
-
-  hitQueueGate(index) {
-    if (this.queueGates[index].passed) return;
-
-    if (index === this.queueProgress) {
-      this.queueGates[index].passed = true;
-      this.queueProgress++;
-      this.queueGates[index].gate.setFillStyle(0x44ff44, 0.6);
-      this.queueGates[index].numText.setColor('#44ff44');
-
-      // Cascade of green particles
-      const gx = this.queueGates[index].gate.x;
-      const gy = this.queueGates[index].gate.y;
-      for (let j = 0; j < 5; j++) {
-        this.time.delayedCall(j * 60, () => {
-          createCollectBurst(this, gx, gy - 60 + j * 30, 0x44ff44);
-        });
+    swarmCenters.forEach(sw => {
+      for (let i = 0; i < sw.count; i++) {
+        const sx = sw.x + i * 60 - (sw.count * 30);
+        const e = createSpamBot(this, sx, GROUND_Y - 30);
+        this.enemies.push(e);
       }
-
-      this.cameras.main.shake(60, 0.003);
-    } else if (index > this.queueProgress) {
-      this.cameras.main.shake(100, 0.006);
-      this.queueProgress = 0;
-      this.queueGates.forEach(qg => {
-        qg.passed = false;
-        qg.gate.setFillStyle(0x4488ff, 0.4);
-        qg.numText.setColor('#4488ff');
-      });
-
-      const warn = this.add.text(this.player.x, this.player.y - 60, 'Wrong order!', {
-        fontFamily: '"Courier New", monospace',
-        fontSize: '18px',
-        color: '#ff4444',
-        resolution: 2,
-      });
-      warn.setOrigin(0.5).setDepth(300);
-      this.tweens.add({
-        targets: warn,
-        y: warn.y - 45,
-        alpha: 0,
-        duration: 800,
-        onComplete: () => warn.destroy(),
-      });
-    }
-  }
-
-  createDataPackets() {
-    this.dataPackets = this.physics.add.group();
-    this.packetsCollected = 0;
-
-    for (let i = 0; i < 15; i++) {
-      const x = 500 + Math.random() * (WORLD.width - 1000);
-      const y = 120 + Math.random() * (GAME.HEIGHT - 240);
-
-      const packet = this.physics.add.sprite(x, y, 'gate_block');
-      packet.setScale(0.5);
-      packet.setTint(Phaser.Utils.Array.GetRandom(PALETTE.neon));
-      packet.setBlendMode(Phaser.BlendModes.ADD);
-      packet.setDepth(65);
-      packet.setAlpha(0.6);
-      packet._tooltip = DATA_TOOLTIPS[i % DATA_TOOLTIPS.length];
-
-      this.tweens.add({
-        targets: packet,
-        y: y - 9,
-        angle: 10,
-        duration: 1000 + Math.random() * 500,
-        ease: 'Sine.easeInOut',
-        yoyo: true,
-        repeat: -1,
-      });
-
-      this.dataPackets.add(packet);
-    }
-
-    this.physics.add.overlap(this.player, this.dataPackets, this.collectPacket, null, this);
-  }
-
-  collectPacket(player, packet) {
-    createCollectBurst(this, packet.x, packet.y, 0x00ffff);
-    this.packetsCollected++;
-
-    // Enhanced tooltip with border and glow styling
-    const tooltip = this.add.text(packet.x, packet.y - 30, packet._tooltip, {
-      fontFamily: '"Courier New", monospace',
-      fontSize: '14px',
-      color: '#00ffff',
-      backgroundColor: '#0d022199',
-      padding: { x: 12, y: 8 },
-      resolution: 2,
-      stroke: '#00ffff',
-      strokeThickness: 1,
-    });
-    tooltip.setOrigin(0.5).setDepth(300);
-    addGlow(tooltip, 0x00ffff, 3, 0, false, 0.1, 10);
-
-    this.tweens.add({
-      targets: tooltip,
-      y: tooltip.y - 38,
-      alpha: 0,
-      duration: 1200,
-      delay: 600,
-      onComplete: () => tooltip.destroy(),
     });
 
-    packet.destroy();
+    // --- Firewall Drones hovering above platforms (4) ---
+    const dronePositions = [
+      { x: 2800, y: 1100 },
+      { x: 4800, y: 1000 },
+      { x: 7200, y: 1050 },
+      { x: 9100, y: 1050 },
+    ];
+    dronePositions.forEach(dp => {
+      const e = createFirewallDrone(this, dp.x, dp.y);
+      this.enemies.push(e);
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -555,15 +382,14 @@ export class Zone2_APIGateway extends Phaser.Scene {
   createBoss() {
     this.bossDefeated = false;
 
-    // Arena spans one full screen starting at x=8400
-    this.bossArenaX = 8400;
-    this.bossArenaWidth = GAME.WIDTH; // 1920
+    this.bossArenaX = 10200;
+    this.bossArenaWidth = 1800;
     this.bossArenaCenterX = this.bossArenaX + this.bossArenaWidth / 2;
-    this.bossArenaCenterY = GAME.HEIGHT / 2;
+    this.bossArenaCenterY = GROUND_Y - 400;
 
-    // Boss orb
-    this.boss = this.physics.add.sprite(this.bossArenaCenterX, this.bossArenaCenterY, 'player_orb');
-    this.boss.setScale(3);
+    // Boss sprite -- large armored sentinel
+    this.boss = this.physics.add.sprite(this.bossArenaCenterX, this.bossArenaCenterY - 100, 'player_orb');
+    this.boss.setScale(3.5);
     this.boss.setTint(0xff2200);
     this.boss.setBlendMode(Phaser.BlendModes.ADD);
     this.boss.setDepth(80);
@@ -572,40 +398,42 @@ export class Zone2_APIGateway extends Phaser.Scene {
     this.boss.body.setCircle(this.boss.width / 2);
     addGlow(this.boss, 0xff4400, 6, 0, false, 0.1, 32);
 
-    this.bossHP = 6;
-    this.bossMaxHP = 6;
+    this.bossHP = 8;
+    this.bossMaxHP = 8;
     this.bossVulnerable = false;
     this.bossPhaseTime = 0;
     this.bossActive = false;
     this.bossPhase2 = false;
     this.bossBeams = [];
     this.boss429s = [];
+    this.bossShockwaves = [];
     this.bossMovementSpeed = 1.0;
+    this._bossAttackIndex = 0;
 
     // Pulsing tween
     this.bossPulseTween = this.tweens.add({
       targets: this.boss,
-      scaleX: 3.3,
-      scaleY: 3.3,
+      scaleX: 3.8,
+      scaleY: 3.8,
       duration: 600,
       ease: 'Sine.easeInOut',
       yoyo: true,
       repeat: -1,
     });
 
-    // Boss arena trigger zone - activates the fight when player enters
-    this.bossArenaZone = this.add.zone(this.bossArenaX, 0, 60, GAME.HEIGHT);
+    // Boss arena trigger zone
+    this.bossArenaZone = this.add.zone(this.bossArenaX, 0, 60, WORLD.height);
     this.bossArenaZone.setOrigin(0, 0);
     this.physics.add.existing(this.bossArenaZone, true);
     this.physics.add.overlap(this.player, this.bossArenaZone, () => this.activateBoss(), null, this);
 
-    // Overlap for dashing into boss
+    // Overlap for attacking boss when vulnerable
     this.physics.add.overlap(this.player, this.boss, () => this.hitBoss(), null, this);
 
     // Create boss HUD (hidden until active)
-    this.bossHUDContainer = this.add.container(GAME.WIDTH / 2, 40).setScrollFactor(0).setDepth(310).setAlpha(0);
+    this.bossHUDContainer = this.add.container(GAME.WIDTH / 2, 60).setScrollFactor(0).setDepth(310).setAlpha(0);
 
-    const bossTitle = this.add.text(0, 0, 'BOSS: Rate Limit Guardian', {
+    const bossTitle = this.add.text(0, 0, 'RATE LIMIT GUARDIAN', {
       fontFamily: '"Courier New", monospace',
       fontSize: '20px',
       fontStyle: 'bold',
@@ -615,15 +443,10 @@ export class Zone2_APIGateway extends Phaser.Scene {
     addGlow(bossTitle, 0xff0000, 3, 0, false, 0.1, 12);
     this._bossTitleText = bossTitle;
 
-    // HP bar background
-    const hpBarBg = this.add.rectangle(0, 30, 300, 16, 0x333333);
-    hpBarBg.setOrigin(0.5);
+    const hpBarBg = this.add.rectangle(0, 30, 300, 16, 0x333333).setOrigin(0.5);
 
-    // HP bar fill
-    this.bossHPBar = this.add.rectangle(-150 + 1, 30, 298, 14, 0xff2200);
-    this.bossHPBar.setOrigin(0, 0.5);
+    this.bossHPBar = this.add.rectangle(-150 + 1, 30, 298, 14, 0xff2200).setOrigin(0, 0.5);
 
-    // HP text
     this.bossHPText = this.add.text(0, 30, `${this.bossHP} / ${this.bossMaxHP}`, {
       fontFamily: '"Courier New", monospace',
       fontSize: '12px',
@@ -639,10 +462,14 @@ export class Zone2_APIGateway extends Phaser.Scene {
     if (this.bossActive || this.bossDefeated) return;
     this.bossActive = true;
 
-    // Lock camera to the boss arena
+    // Lock camera to boss arena
     this.cameras.main.stopFollow();
-    this.cameras.main.setBounds(this.bossArenaX, 0, this.bossArenaWidth, GAME.HEIGHT);
-    this.cameras.main.pan(this.bossArenaCenterX, this.bossArenaCenterY, 500, 'Power2');
+    this.cameras.main.setBounds(this.bossArenaX, 0, this.bossArenaWidth, WORLD.height);
+    this.cameras.main.pan(
+      this.bossArenaCenterX,
+      GROUND_Y - GAME.HEIGHT / 2 + 100,
+      500, 'Power2',
+    );
 
     // Show boss HUD
     this.tweens.add({
@@ -651,124 +478,146 @@ export class Zone2_APIGateway extends Phaser.Scene {
       duration: 400,
     });
 
-    // Start boss attack cycle
-    this.bossAttackTimer = this.time.addEvent({
-      delay: 3000,
-      callback: () => this.bossAttackCycle(),
-      loop: true,
-    });
+    // Dramatic entrance: boss slams down from above
+    this.boss.setY(this.bossArenaCenterY - 600);
+    this.tweens.add({
+      targets: this.boss,
+      y: this.bossArenaCenterY,
+      duration: 800,
+      ease: 'Bounce.easeOut',
+      onComplete: () => {
+        this.cameras.main.shake(300, 0.012);
 
-    // Start vulnerability window cycle
-    this.bossVulnTimer = this.time.addEvent({
-      delay: 4500,
-      callback: () => this.bossOpenWindow(),
-      loop: true,
+        // Start boss attack cycle
+        this.bossAttackTimer = this.time.addEvent({
+          delay: 3200,
+          callback: () => this.bossAttackCycle(),
+          loop: true,
+        });
+
+        // Start vulnerability window cycle
+        this.bossVulnTimer = this.time.addEvent({
+          delay: 5000,
+          callback: () => this.bossOpenWindow(),
+          loop: true,
+        });
+      },
     });
   }
 
   /* ------------------------------------------------------------------ */
-  /*  Boss attack cycle: alternates beams and 429 barrage               */
+  /*  Boss attack cycle -- three attack types                           */
   /* ------------------------------------------------------------------ */
 
   bossAttackCycle() {
     if (this.bossDefeated || this.bossVulnerable) return;
 
     if (this.bossPhase2) {
-      // Phase 2: fire both simultaneously
-      this.bossFireBeams();
-      this.time.delayedCall(400, () => this.bossFire429Barrage());
+      // Phase 2: fire two attacks simultaneously
+      const attacks = [0, 1, 2];
+      const pick1 = Phaser.Utils.Array.GetRandom(attacks);
+      let pick2 = Phaser.Utils.Array.GetRandom(attacks);
+      while (pick2 === pick1) pick2 = Phaser.Utils.Array.GetRandom(attacks);
+
+      this.executeBossAttack(pick1);
+      this.time.delayedCall(400, () => this.executeBossAttack(pick2));
     } else {
-      // Phase 1: alternate between beams and 429 barrage
-      this._bossAttackToggle = !this._bossAttackToggle;
-      if (this._bossAttackToggle) {
-        this.bossFireBeams();
-      } else {
-        this.bossFire429Barrage();
-      }
+      // Phase 1: cycle through attacks in order
+      this.executeBossAttack(this._bossAttackIndex % 3);
+      this._bossAttackIndex++;
     }
   }
 
-  bossFireBeams() {
+  executeBossAttack(attackType) {
     if (this.bossDefeated || this.bossVulnerable) return;
 
-    // Fire 3 horizontal beams at different y positions
-    const yOffsets = [-250, 0, 250];
-    yOffsets.forEach((offset, i) => {
-      this.time.delayedCall(i * 300, () => {
+    switch (attackType) {
+      case 0: this.bossGroundStomp(); break;
+      case 1: this.bossFire429Barrage(); break;
+      case 2: this.bossFireBeamSweep(); break;
+    }
+  }
+
+  /* Attack 1: Ground stomp shockwave */
+  bossGroundStomp() {
+    if (this.bossDefeated || this.bossVulnerable) return;
+
+    // Warning: boss rises up
+    this.tweens.add({
+      targets: this.boss,
+      y: this.boss.y - 80,
+      duration: 400,
+      ease: 'Power2',
+      yoyo: true,
+      onYoyo: () => {
         if (this.bossDefeated || this.bossVulnerable) return;
 
-        const beamY = this.bossArenaCenterY + offset;
+        this.cameras.main.shake(200, 0.015);
 
-        // Visual warning line (thin, glowing)
-        const warningLine = this.add.rectangle(this.bossArenaX, beamY, this.bossArenaWidth, 4, 0xff6600, 0.3);
-        warningLine.setOrigin(0, 0.5).setDepth(74);
-        addGlow(warningLine, 0xff4400, 3, 0, false, 0.1, 8);
+        // Shockwave -- rectangle sweeping across floor from boss position
+        const shockLeft = this.add.rectangle(this.boss.x, GROUND_Y - 25, 40, 50, 0xff4400, 0.8);
+        shockLeft.setDepth(75);
+        addGlow(shockLeft, 0xff4400, 3, 0, false, 0.1, 12);
+        this.physics.add.existing(shockLeft, false);
+        shockLeft.body.setAllowGravity(false);
+        shockLeft.body.setImmovable(true);
+        shockLeft.body.setVelocityX(-500);
 
-        // Warning flash: 3 quick blinks
-        this.tweens.add({
-          targets: warningLine,
-          alpha: { from: 0.1, to: 0.6 },
-          duration: 150,
-          yoyo: true,
-          repeat: 2,
-          onComplete: () => {
-            warningLine.destroy();
+        const shockRight = this.add.rectangle(this.boss.x, GROUND_Y - 25, 40, 50, 0xff4400, 0.8);
+        shockRight.setDepth(75);
+        addGlow(shockRight, 0xff4400, 3, 0, false, 0.1, 12);
+        this.physics.add.existing(shockRight, false);
+        shockRight.body.setAllowGravity(false);
+        shockRight.body.setImmovable(true);
+        shockRight.body.setVelocityX(500);
 
-            if (this.bossDefeated || this.bossVulnerable) return;
+        [shockLeft, shockRight].forEach(sw => {
+          this.bossShockwaves.push(sw);
 
-            // Full beam fires
-            const beam = this.add.rectangle(this.bossArenaX, beamY, this.bossArenaWidth, 20, 0xff2200, 0.9);
-            beam.setOrigin(0, 0.5).setDepth(75);
-            addGlow(beam, 0xff0000, 4, 0, false, 0.1, 12);
+          this.physics.add.overlap(this.player, sw, () => {
+            if (this.player._invulnerable) return;
+            this.bossHitPlayer();
+          }, null, this);
 
-            this.physics.add.existing(beam, true);
+          // Ground particles trail
+          const trailTimer = this.time.addEvent({
+            delay: 80,
+            callback: () => {
+              if (sw.active) {
+                createCollectBurst(this, sw.x, sw.y, 0xff4400);
+              }
+            },
+            repeat: 15,
+          });
 
-            this.physics.add.overlap(this.player, beam, () => {
-              if (this.player._invulnerable) return;
-              this.hitRateLimiterBoss(beam);
-            }, null, this);
-
-            this.bossBeams.push(beam);
-
-            // Particle trail along beam
-            for (let p = 0; p < 4; p++) {
-              this.time.delayedCall(p * 80, () => {
-                if (beam.active) {
-                  const px = this.bossArenaX + Math.random() * this.bossArenaWidth;
-                  createCollectBurst(this, px, beamY, 0xff4400);
-                }
-              });
-            }
-
-            // Remove after a short time
-            this.time.delayedCall(1200, () => {
-              if (beam.active) beam.destroy();
-              const idx = this.bossBeams.indexOf(beam);
-              if (idx >= 0) this.bossBeams.splice(idx, 1);
-            });
-          },
+          this.time.delayedCall(2500, () => {
+            if (sw.active) sw.destroy();
+            trailTimer.remove();
+            const idx = this.bossShockwaves.indexOf(sw);
+            if (idx >= 0) this.bossShockwaves.splice(idx, 1);
+          });
         });
-      });
+      },
     });
   }
 
-  /* ------------------------------------------------------------------ */
-  /*  429 barrage: "429" text objects rain down from above               */
-  /* ------------------------------------------------------------------ */
-
+  /* Attack 2: "429" text rain from above */
   bossFire429Barrage() {
     if (this.bossDefeated || this.bossVulnerable) return;
 
-    const count = this.bossPhase2 ? 10 : 6;
+    const count = this.bossPhase2 ? 12 : 7;
+    const camScrollX = this.cameras.main.scrollX;
 
     for (let i = 0; i < count; i++) {
-      this.time.delayedCall(i * 150, () => {
+      this.time.delayedCall(i * 180, () => {
         if (this.bossDefeated || this.bossVulnerable) return;
 
         const spawnX = this.bossArenaX + 100 + Math.random() * (this.bossArenaWidth - 200);
-        const text429 = this.add.text(spawnX, -30, '429', {
+        const spawnY = this.cameras.main.scrollY - 40;
+
+        const text429 = this.add.text(spawnX, spawnY, '429', {
           fontFamily: '"Courier New", monospace',
-          fontSize: '32px',
+          fontSize: '36px',
           fontStyle: 'bold',
           color: '#ff4444',
           resolution: 2,
@@ -777,20 +626,20 @@ export class Zone2_APIGateway extends Phaser.Scene {
         addGlow(text429, 0xff0000, 4, 0, false, 0.1, 12);
 
         this.physics.add.existing(text429, false);
-        text429.body.setAllowGravity(false);
-        text429.body.setVelocityY(this.bossPhase2 ? 400 : 280);
+        text429.body.setAllowGravity(true);
+        text429.body.setBounce(0);
         text429.body.setSize(text429.width, text429.height);
 
         this.physics.add.overlap(this.player, text429, () => {
           if (this.player._invulnerable) return;
-          this.hitRateLimiterBoss(text429);
+          this.bossHitPlayer();
           text429.destroy();
         }, null, this);
 
         this.boss429s.push(text429);
 
-        // Destroy when off-screen
-        this.time.delayedCall(3500, () => {
+        // Destroy when fallen too far
+        this.time.delayedCall(4000, () => {
           if (text429.active) text429.destroy();
           const idx = this.boss429s.indexOf(text429);
           if (idx >= 0) this.boss429s.splice(idx, 1);
@@ -799,50 +648,118 @@ export class Zone2_APIGateway extends Phaser.Scene {
     }
   }
 
-  hitRateLimiterBoss() {
-    if (this.player._invulnerable) return;
+  /* Attack 3: Horizontal beam sweep with warning */
+  bossFireBeamSweep() {
+    if (this.bossDefeated || this.bossVulnerable) return;
 
-    const pushDir = this.player.x > this.bossArenaCenterX ? 1 : -1;
-    this.player.body.setVelocity(pushDir * 300, -150);
+    const beamYOptions = [GROUND_Y - 60, GROUND_Y - 200, GROUND_Y - 400];
+    const beamY = Phaser.Utils.Array.GetRandom(beamYOptions);
 
-    this.player._invulnerable = true;
+    // Warning line -- thin, flashing
+    const warningLine = this.add.rectangle(
+      this.bossArenaX, beamY,
+      this.bossArenaWidth, 6, 0xff6600, 0.3,
+    );
+    warningLine.setOrigin(0, 0.5).setDepth(74);
+    addGlow(warningLine, 0xff4400, 3, 0, false, 0.1, 8);
+
     this.tweens.add({
-      targets: this.player,
-      alpha: 0.3,
-      duration: 100,
+      targets: warningLine,
+      alpha: { from: 0.1, to: 0.7 },
+      duration: 150,
       yoyo: true,
-      repeat: 5,
+      repeat: 3,
       onComplete: () => {
-        this.player.setAlpha(1);
-        this.player._invulnerable = false;
+        warningLine.destroy();
+        if (this.bossDefeated || this.bossVulnerable) return;
+
+        // Full beam fires
+        const beam = this.add.rectangle(
+          this.bossArenaX, beamY,
+          this.bossArenaWidth, 24, 0xff2200, 0.9,
+        );
+        beam.setOrigin(0, 0.5).setDepth(75);
+        addGlow(beam, 0xff0000, 4, 0, false, 0.1, 16);
+
+        this.physics.add.existing(beam, true);
+
+        this.physics.add.overlap(this.player, beam, () => {
+          if (this.player._invulnerable) return;
+          this.bossHitPlayer();
+        }, null, this);
+
+        this.bossBeams.push(beam);
+
+        // Particle trail
+        for (let p = 0; p < 5; p++) {
+          this.time.delayedCall(p * 60, () => {
+            if (beam.active) {
+              const px = this.bossArenaX + Math.random() * this.bossArenaWidth;
+              createCollectBurst(this, px, beamY, 0xff4400);
+            }
+          });
+        }
+
+        this.time.delayedCall(1200, () => {
+          if (beam.active) beam.destroy();
+          const idx = this.bossBeams.indexOf(beam);
+          if (idx >= 0) this.bossBeams.splice(idx, 1);
+        });
       },
     });
-
-    this.cameras.main.shake(150, 0.008);
   }
 
+  bossHitPlayer() {
+    if (this.player._invulnerable) return;
+
+    const pushDir = this.player.x > this.boss.x ? 1 : -1;
+    this.player.takeDamage(pushDir * 350, -250);
+    this.cameras.main.shake(150, 0.008);
+
+    // Flash "429 Too Many Requests" warning
+    if (!this._rateLimitWarning) {
+      this._rateLimitWarning = this.add.text(GAME.WIDTH / 2, 120, '429 Too Many Requests', {
+        fontFamily: '"Courier New", monospace',
+        fontSize: '32px',
+        fontStyle: 'bold',
+        color: '#ff4444',
+        resolution: 2,
+      });
+      this._rateLimitWarning.setOrigin(0.5).setScrollFactor(0).setDepth(300).setAlpha(0);
+      addGlow(this._rateLimitWarning, 0xff0000, 6, 0, false, 0.1, 16);
+    }
+
+    this.tweens.add({
+      targets: this._rateLimitWarning,
+      alpha: 1,
+      duration: 100,
+      yoyo: true,
+      hold: 500,
+    });
+  }
+
+  /* Vulnerability window -- boss shrinks and turns green */
   bossOpenWindow() {
     if (this.bossDefeated) return;
 
     this.bossVulnerable = true;
 
-    // Dramatic vulnerability: boss shrinks, turns bright green
+    // Dramatic: boss shrinks, turns bright green
     this.boss.setTint(0x44ff44);
     this.tweens.add({
       targets: this.boss,
-      scaleX: 1.8,
-      scaleY: 1.8,
+      scaleX: 2.0,
+      scaleY: 2.0,
       duration: 300,
       ease: 'Back.easeOut',
     });
 
-    // Ring of particles expanding outward
+    // Ring of particles
     const ringCount = 16;
     for (let i = 0; i < ringCount; i++) {
       const angle = (i / ringCount) * Math.PI * 2;
       const particle = this.add.circle(this.boss.x, this.boss.y, 6, 0x44ff44);
-      particle.setBlendMode(Phaser.BlendModes.ADD);
-      particle.setDepth(81);
+      particle.setBlendMode(Phaser.BlendModes.ADD).setDepth(81);
       addGlow(particle, 0x44ff44, 3, 0, false, 0.1, 8);
 
       this.tweens.add({
@@ -857,8 +774,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       });
     }
 
-    // Flash text
-    const hitText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 180, 'COOLDOWN - STRIKE NOW!', {
+    const hitText = this.add.text(GAME.WIDTH / 2, 180, 'COOLDOWN -- STRIKE NOW!', {
       fontFamily: '"Courier New", monospace',
       fontSize: '24px',
       fontStyle: 'bold',
@@ -867,7 +783,6 @@ export class Zone2_APIGateway extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(300).setScrollFactor(0);
     addGlow(hitText, 0x44ff44, 6, 0, false, 0.1, 20);
 
-    // Pulsing text
     this.tweens.add({
       targets: hitText,
       alpha: { from: 0.6, to: 1 },
@@ -881,11 +796,10 @@ export class Zone2_APIGateway extends Phaser.Scene {
       this.bossVulnerable = false;
       if (!this.bossDefeated) {
         this.boss.setTint(this.bossPhase2 ? 0xaa00ff : 0xff2200);
-        // Restore boss scale
         this.tweens.add({
           targets: this.boss,
-          scaleX: 3,
-          scaleY: 3,
+          scaleX: 3.5,
+          scaleY: 3.5,
           duration: 300,
           ease: 'Power2',
         });
@@ -896,21 +810,18 @@ export class Zone2_APIGateway extends Phaser.Scene {
 
   hitBoss() {
     if (!this.bossVulnerable || this.bossDefeated) return;
-    // Only allow hitting if player is dashing or moving fast
+    // Require dashing or high speed
     const speed = Math.sqrt(this.player.body.velocity.x ** 2 + this.player.body.velocity.y ** 2);
     if (speed < 150) return;
 
     this.bossVulnerable = false;
     this.bossHP--;
 
-    // Particle explosion at impact
     createCollectBurst(this, this.boss.x, this.boss.y, 0xff4400);
     createCollectBurst(this, this.boss.x, this.boss.y, 0xffaa00);
-
-    // Camera shake
     this.cameras.main.shake(200, 0.012);
 
-    // Flash boss white
+    // Flash white
     this.boss.setTint(0xffffff);
     this.time.delayedCall(150, () => {
       if (!this.bossDefeated) {
@@ -918,11 +829,11 @@ export class Zone2_APIGateway extends Phaser.Scene {
       }
     });
 
-    // Restore boss scale after vulnerability shrink
+    // Restore scale
     this.tweens.add({
       targets: this.boss,
-      scaleX: 3,
-      scaleY: 3,
+      scaleX: 3.5,
+      scaleY: 3.5,
       duration: 300,
       ease: 'Power2',
     });
@@ -939,10 +850,10 @@ export class Zone2_APIGateway extends Phaser.Scene {
 
     // Bounce player back
     const pushDir = this.player.x > this.boss.x ? 1 : -1;
-    this.player.body.setVelocity(pushDir * 350, -200);
+    this.player.body.setVelocity(pushDir * 350, -250);
 
-    // Phase 2 trigger at 2 HP
-    if (this.bossHP <= 2 && !this.bossPhase2) {
+    // Phase 2 trigger at 3 HP
+    if (this.bossHP <= 3 && !this.bossPhase2) {
       this.enterBossPhase2();
     }
 
@@ -952,22 +863,21 @@ export class Zone2_APIGateway extends Phaser.Scene {
   }
 
   /* ------------------------------------------------------------------ */
-  /*  Boss Phase 2: enraged mode at 2 HP                                */
+  /*  Boss Phase 2: enraged at 3 HP -- purple, faster, combined attacks */
   /* ------------------------------------------------------------------ */
 
   enterBossPhase2() {
     this.bossPhase2 = true;
     this.bossMovementSpeed = 1.6;
 
-    // Boss turns purple
     this.boss.setTint(0xaa00ff);
     addGlow(this.boss, 0xaa00ff, 8, 0, false, 0.1, 40);
 
     // Screen flash purple
     const purpleFlash = this.add.rectangle(
       this.bossArenaCenterX, this.bossArenaCenterY,
-      this.bossArenaWidth, GAME.HEIGHT,
-      0xaa00ff, 0.4
+      this.bossArenaWidth, WORLD.height,
+      0xaa00ff, 0.4,
     );
     purpleFlash.setDepth(200);
     this.tweens.add({
@@ -977,10 +887,9 @@ export class Zone2_APIGateway extends Phaser.Scene {
       onComplete: () => purpleFlash.destroy(),
     });
 
-    // Phase 2 announcement
-    const phaseText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 240, 'PHASE 2: ENRAGED', {
+    const phaseText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 200, 'PHASE 2: ENRAGED', {
       fontFamily: '"Courier New", monospace',
-      fontSize: '32px',
+      fontSize: '36px',
       fontStyle: 'bold',
       color: '#aa00ff',
       resolution: 2,
@@ -996,12 +905,9 @@ export class Zone2_APIGateway extends Phaser.Scene {
       onComplete: () => phaseText.destroy(),
     });
 
-    // Update boss title color
     if (this._bossTitleText) {
       this._bossTitleText.setColor('#aa00ff');
     }
-
-    // HP bar turns purple
     this.bossHPBar.setFillStyle(0xaa00ff);
 
     // Speed up attack timer
@@ -1015,24 +921,29 @@ export class Zone2_APIGateway extends Phaser.Scene {
     this.cameras.main.shake(300, 0.015);
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  Boss defeat                                                       */
+  /* ------------------------------------------------------------------ */
+
   defeatBoss() {
     this.bossDefeated = true;
 
-    // Stop timers
     if (this.bossAttackTimer) this.bossAttackTimer.remove();
     if (this.bossVulnTimer) this.bossVulnTimer.remove();
 
-    // Destroy remaining beams and 429s
+    // Destroy remaining projectiles
     this.bossBeams.forEach(b => { if (b.active) b.destroy(); });
     this.bossBeams = [];
     this.boss429s.forEach(b => { if (b.active) b.destroy(); });
     this.boss429s = [];
+    this.bossShockwaves.forEach(b => { if (b.active) b.destroy(); });
+    this.bossShockwaves = [];
 
-    // Chain of explosions across the arena
-    for (let i = 0; i < 12; i++) {
-      this.time.delayedCall(i * 120, () => {
+    // Chain of explosions
+    for (let i = 0; i < 14; i++) {
+      this.time.delayedCall(i * 100, () => {
         const ex = this.bossArenaX + 200 + Math.random() * (this.bossArenaWidth - 400);
-        const ey = 150 + Math.random() * (GAME.HEIGHT - 300);
+        const ey = GROUND_Y - 100 - Math.random() * 600;
         createCollectBurst(this, ex, ey, 0xff4400);
         createCollectBurst(this, ex, ey, 0xffaa00);
         createCollectBurst(this, ex, ey, 0xff0000);
@@ -1040,11 +951,11 @@ export class Zone2_APIGateway extends Phaser.Scene {
       });
     }
 
-    // Screen flash white
+    // White flash
     const whiteFlash = this.add.rectangle(
       this.bossArenaCenterX, this.bossArenaCenterY,
-      this.bossArenaWidth + 200, GAME.HEIGHT + 200,
-      0xffffff, 0.9
+      this.bossArenaWidth + 200, WORLD.height + 200,
+      0xffffff, 0.9,
     );
     whiteFlash.setDepth(500);
     this.tweens.add({
@@ -1056,10 +967,9 @@ export class Zone2_APIGateway extends Phaser.Scene {
       onComplete: () => whiteFlash.destroy(),
     });
 
-    // Big camera shake
     this.cameras.main.shake(600, 0.025);
 
-    // Boss explodes with scale-up
+    // Boss explodes
     this.tweens.add({
       targets: this.boss,
       scale: 8,
@@ -1078,7 +988,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
       duration: 600,
     });
 
-    // "RATE LIMIT BYPASSED" neon text appears after explosions
+    // Victory text
     this.time.delayedCall(800, () => {
       const bypassText = this.add.text(GAME.WIDTH / 2, GAME.HEIGHT / 2, 'RATE LIMIT BYPASSED', {
         fontFamily: '"Courier New", monospace',
@@ -1098,7 +1008,6 @@ export class Zone2_APIGateway extends Phaser.Scene {
         ease: 'Back.easeOut',
       });
 
-      // Pulsing neon glow on the text
       this.tweens.add({
         targets: bypassText,
         alpha: { from: 0.7, to: 1 },
@@ -1109,7 +1018,6 @@ export class Zone2_APIGateway extends Phaser.Scene {
         delay: 500,
       });
 
-      // Fade out the victory text after a moment
       this.tweens.add({
         targets: bypassText,
         alpha: 0,
@@ -1120,10 +1028,9 @@ export class Zone2_APIGateway extends Phaser.Scene {
       });
     });
 
-    // Spawn portal after a short delay
+    // Spawn portal after delay
     this.time.delayedCall(1800, () => {
-      // Restore camera to follow player and full world bounds
-      this.cameras.main.setBounds(0, 0, WORLD.width, GAME.HEIGHT);
+      this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
       this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
       this.spawnPortalAfterBoss();
     });
@@ -1131,7 +1038,7 @@ export class Zone2_APIGateway extends Phaser.Scene {
 
   spawnPortalAfterBoss() {
     this.portalX = WORLD.width - 150;
-    this.portalY = GAME.HEIGHT / 2;
+    this.portalY = GROUND_Y - 100;
 
     const approvedText = this.add.text(this.portalX, this.portalY - 120, 'GATEWAY APPROVED', {
       fontFamily: '"Courier New", monospace',
@@ -1150,7 +1057,6 @@ export class Zone2_APIGateway extends Phaser.Scene {
     this.portal.setTint(0xff00ff);
     addGlow(this.portal, 0xff00ff, 4, 0, false, 0.1, 24);
 
-    // Fade in the portal
     this.portal.setAlpha(0);
     approvedText.setAlpha(0);
     this.tweens.add({
@@ -1169,12 +1075,26 @@ export class Zone2_APIGateway extends Phaser.Scene {
 
     this.portalParticles = createPortalParticles(this, this.portalX, this.portalY, 0xff00ff);
 
-    this.portalZone = this.add.zone(this.portalX, this.portalY, 60, 60);
+    this.portalZone = this.add.zone(this.portalX, this.portalY, 80, 80);
     this.physics.add.existing(this.portalZone, true);
     this.physics.add.overlap(this.player, this.portalZone, () => this.exitZone(), null, this);
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  Camera                                                            */
+  /* ------------------------------------------------------------------ */
+
+  setupCamera() {
+    this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
+    this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  HUD                                                               */
+  /* ------------------------------------------------------------------ */
+
   createHUD() {
+    // Zone title
     const hudTitle = this.add.text(20, 20, 'ZONE 2: API GATEWAY', {
       fontFamily: '"Courier New", monospace',
       fontSize: '18px',
@@ -1182,12 +1102,88 @@ export class Zone2_APIGateway extends Phaser.Scene {
       resolution: 2,
     }).setScrollFactor(0).setDepth(200);
     addGlow(hudTitle, 0xff00ff, 2, 0, false, 0.1, 8);
+
+    // HP display
+    this.hpText = this.add.text(20, 50, '', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '16px',
+      color: '#00ffff',
+      resolution: 2,
+    }).setScrollFactor(0).setDepth(200);
+    addGlow(this.hpText, 0x00ffff, 2, 0, false, 0.1, 8);
   }
 
-  setupCamera() {
-    this.cameras.main.setBounds(0, 0, WORLD.width, GAME.HEIGHT);
-    this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+  /* ------------------------------------------------------------------ */
+  /*  Collisions                                                        */
+  /* ------------------------------------------------------------------ */
+
+  setupCollisions() {
+    // Player vs ground/platforms
+    for (const g of this.grounds) {
+      this.physics.add.collider(this.player, g);
+    }
+    for (const p of this.platforms) {
+      this.physics.add.collider(this.player, p);
+    }
+
+    // Enemies vs ground
+    this.enemies.forEach(e => {
+      for (const g of this.grounds) {
+        this.physics.add.collider(e, g);
+      }
+    });
+
+    // Player overlaps enemies (takes damage on touch)
+    this.enemies.forEach(e => {
+      this.physics.add.overlap(this.player, e, () => {
+        if (this.player._invulnerable || e._dead) return;
+        this.player.takeDamage(
+          (this.player.x > e.x ? 1 : -1) * 250,
+          -200,
+        );
+      }, null, this);
+    });
+
+    // Enemy projectiles vs player
+    this.physics.add.overlap(this.player, this._enemyProjectiles, (p, proj) => {
+      if (this.player._invulnerable) return;
+      this.player.takeDamage(
+        (this.player.x > proj.x ? 1 : -1) * 200,
+        -150,
+      );
+      proj.destroy();
+    }, null, this);
+
+    // Crumbling platforms -- trigger crumble on player landing
+    this.crumblingPlatforms.forEach(cp => {
+      this.physics.add.collider(this.player, cp, () => {
+        cp.startCrumble();
+      });
+    });
+
+    // Hazard spikes overlap
+    this.hazards.forEach(h => {
+      this.physics.add.overlap(this.player, h, () => {
+        if (this.player._invulnerable) return;
+        this.player.takeDamage(0, -350);
+      }, null, this);
+    });
+
+    // Laser gates overlap
+    this.laserGates.forEach(lg => {
+      this.physics.add.overlap(this.player, lg, () => {
+        if (!lg._on || this.player._invulnerable) return;
+        this.player.takeDamage(
+          (this.player.x > lg.x ? 1 : -1) * 300,
+          -200,
+        );
+      }, null, this);
+    });
   }
+
+  /* ------------------------------------------------------------------ */
+  /*  Zone exit                                                         */
+  /* ------------------------------------------------------------------ */
 
   exitZone() {
     if (this._exiting) return;
@@ -1218,26 +1214,94 @@ export class Zone2_APIGateway extends Phaser.Scene {
     });
   }
 
+  /* ------------------------------------------------------------------ */
+  /*  Update loop                                                       */
+  /* ------------------------------------------------------------------ */
+
   update(time, delta) {
     this.player.update(time, delta);
     this.parallax.update(this.cameras.main);
 
-    for (const beam of this.rateLimiters) {
-      if (!beam._cooldown) {
-        beam.y = beam._baseY + Math.sin(time * beam._config.speed) * beam._config.amplitude;
-        beam.body.updateFromGameObject();
-      }
+    // Update HUD
+    if (this.hpText) {
+      const hearts = '♥'.repeat(this.player.hp) + '♡'.repeat(this.player.maxHp - this.player.hp);
+      this.hpText.setText(`HP: ${hearts}`);
     }
 
-    // Boss figure-8 movement (speed increases in phase 2)
+    // Update moving platforms
+    this.movingPlatforms.forEach(mp => {
+      if (mp.active) mp.updatePlatform(time, delta);
+    });
+
+    // Conveyor belt effect on player
+    this.conveyors.forEach(conv => {
+      if (conv.active && conv._isConveyor && this.player.body.touching.down) {
+        // Check if player is standing on this conveyor
+        const px = this.player.x;
+        const pw = this.player.body.width / 2;
+        const cx = conv.x;
+        const cw = conv.body.width / 2;
+        if (px + pw > cx - cw && px - pw < cx + cw) {
+          const playerBottom = this.player.body.bottom;
+          const convTop = conv.body.top;
+          if (Math.abs(playerBottom - convTop) < 10) {
+            this.player.x += conv._conveyorSpeed * delta * 0.001;
+          }
+        }
+      }
+    });
+
+    // Update enemies
+    this.enemies.forEach(e => {
+      if (e.active && !e._dead) {
+        e.update(time, delta, this.player);
+      }
+    });
+
+    // Attack hitbox vs enemies
+    if (this.player.attackHitbox) {
+      this.enemies.forEach(e => {
+        if (e.active && !e._dead && !e._hurt) {
+          const hb = this.player.attackHitbox;
+          if (Phaser.Geom.Intersects.RectangleToRectangle(
+            hb.getBounds(),
+            e.getBounds(),
+          )) {
+            e.takeDamage(GAME.ATTACK_DAMAGE, this.player.facing);
+          }
+        }
+      });
+    }
+
+    // Boss movement -- figure-8 pattern hovering above the arena
     if (this.bossActive && !this.bossDefeated && this.boss.active) {
       this.bossPhaseTime += delta * 0.001;
       const spd = this.bossMovementSpeed;
-      const figureEightX = Math.sin(this.bossPhaseTime * 0.8 * spd) * 350;
-      const figureEightY = Math.sin(this.bossPhaseTime * 1.6 * spd) * 200;
+      const figureEightX = Math.sin(this.bossPhaseTime * 0.6 * spd) * 500;
+      const figureEightY = Math.sin(this.bossPhaseTime * 1.2 * spd) * 150;
       this.boss.x = this.bossArenaCenterX + figureEightX;
       this.boss.y = this.bossArenaCenterY + figureEightY;
       this.boss.body.updateFromGameObject();
+    }
+
+    // Player death check -- respawn at last ground segment start
+    if (this.player.y > WORLD.height - 50) {
+      if (!this.player._invulnerable) {
+        const dead = this.player.takeDamage(0, -400);
+        if (!dead) {
+          // Respawn on nearest ground segment behind player
+          const segments = [0, 2200, 4200, 6000, 8200, 10200];
+          let respawnX = 150;
+          for (let i = segments.length - 1; i >= 0; i--) {
+            if (this.player.x >= segments[i]) {
+              respawnX = segments[i] + 100;
+              break;
+            }
+          }
+          this.player.setPosition(respawnX, GROUND_Y - 60);
+          this.player.body.setVelocity(0, 0);
+        }
+      }
     }
   }
 }

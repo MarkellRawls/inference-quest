@@ -155,3 +155,92 @@ export function generateGradientRect(scene, key, width, height, topColor, bottom
 
   tex.refresh();
 }
+
+export function generatePlatformTexture(scene, key, width, height, color) {
+  const tex = scene.textures.createCanvas(key, width, height);
+  const ctx = tex.getContext();
+  const c = Phaser.Display.Color.IntegerToColor(color);
+
+  const bg = ctx.createLinearGradient(0, 0, 0, height);
+  bg.addColorStop(0, `rgba(${c.r}, ${c.g}, ${c.b}, 0.8)`);
+  bg.addColorStop(0.3, `rgba(${c.r}, ${c.g}, ${c.b}, 0.4)`);
+  bg.addColorStop(1, `rgba(${c.r}, ${c.g}, ${c.b}, 0.1)`);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = `rgba(${Math.min(c.r + 80, 255)}, ${Math.min(c.g + 80, 255)}, ${Math.min(c.b + 80, 255)}, 0.9)`;
+  ctx.fillRect(0, 0, width, 3);
+
+  ctx.fillStyle = `rgba(${c.r}, ${c.g}, ${c.b}, 0.3)`;
+  ctx.fillRect(0, height - 2, width, 2);
+
+  tex.refresh();
+}
+
+export function generateTerrainStrip(scene, key, width, height, color, roughness = 0.4) {
+  const tex = scene.textures.createCanvas(key, width, height);
+  const ctx = tex.getContext();
+  const c = Phaser.Display.Color.IntegerToColor(color);
+
+  const segW = 8;
+  const segments = Math.ceil(width / segW);
+  const topPoints = [];
+
+  let py = height * 0.15;
+  for (let i = 0; i <= segments; i++) {
+    topPoints.push(py);
+    py += (Math.random() - 0.5) * height * roughness;
+    py = Math.max(2, Math.min(height * 0.45, py));
+  }
+
+  const surfGrad = ctx.createLinearGradient(0, 0, 0, height);
+  surfGrad.addColorStop(0, `rgba(${c.r}, ${c.g}, ${c.b}, 0.7)`);
+  surfGrad.addColorStop(0.3, `rgba(${Math.max(c.r - 30, 0)}, ${Math.max(c.g - 30, 0)}, ${Math.max(c.b - 30, 0)}, 0.5)`);
+  surfGrad.addColorStop(1, `rgba(${Math.max(c.r - 60, 0)}, ${Math.max(c.g - 60, 0)}, ${Math.max(c.b - 60, 0)}, 0.2)`);
+
+  ctx.fillStyle = surfGrad;
+  ctx.beginPath();
+  ctx.moveTo(0, height);
+  for (let i = 0; i <= segments; i++) {
+    ctx.lineTo(i * segW, topPoints[i]);
+  }
+  ctx.lineTo(width, height);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = `rgba(${Math.min(c.r + 60, 255)}, ${Math.min(c.g + 60, 255)}, ${Math.min(c.b + 60, 255)}, 0.6)`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, topPoints[0]);
+  for (let i = 1; i <= segments; i++) {
+    ctx.lineTo(i * segW, topPoints[i]);
+  }
+  ctx.stroke();
+
+  tex.refresh();
+}
+
+export function generateDataConduit(scene, key, width, height, color) {
+  const tex = scene.textures.createCanvas(key, width, height);
+  const ctx = tex.getContext();
+  const c = Phaser.Display.Color.IntegerToColor(color);
+
+  ctx.fillStyle = `rgba(${c.r}, ${c.g}, ${c.b}, 0.08)`;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.strokeStyle = `rgba(${c.r}, ${c.g}, ${c.b}, 0.3)`;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, width, height);
+
+  const lineSpacing = 12;
+  ctx.strokeStyle = `rgba(${c.r}, ${c.g}, ${c.b}, 0.1)`;
+  ctx.lineWidth = 0.5;
+  for (let y = lineSpacing; y < height; y += lineSpacing) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+
+  tex.refresh();
+}

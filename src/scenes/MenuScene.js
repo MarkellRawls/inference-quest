@@ -140,6 +140,27 @@ export class MenuScene extends Phaser.Scene {
       delay: 1000,
       ease: 'Sine.easeOut',
     });
+
+    this.storyTeaser = this.add.text(GAME.WIDTH / 2, 365, 'You are a thought, a question given form. Survive the pipeline. Become a response.', {
+      fontFamily: '"Courier New", monospace',
+      fontSize: '16px',
+      color: '#8888cc',
+      align: 'center',
+      fontStyle: 'italic',
+      resolution: 2,
+      wordWrap: { width: 700 },
+    });
+    this.storyTeaser.setOrigin(0.5, 0);
+    this.storyTeaser.setDepth(30);
+    this.storyTeaser.setAlpha(0);
+
+    this.tweens.add({
+      targets: this.storyTeaser,
+      alpha: 0.8,
+      duration: 2000,
+      delay: 1500,
+      ease: 'Sine.easeOut',
+    });
   }
 
   createZoneDots() {
